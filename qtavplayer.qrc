@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>yuv420.frag</file>
+        <file>yuv420.vert</file>
+        <file>logo.png</file>
+    </qresource>
+</RCC>
