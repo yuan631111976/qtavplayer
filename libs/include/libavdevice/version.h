@@ -16,30 +16,30 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVRESAMPLE_VERSION_H
-#define AVRESAMPLE_VERSION_H
+#ifndef AVDEVICE_VERSION_H
+#define AVDEVICE_VERSION_H
 
 /**
  * @file
- * @ingroup lavr
- * Libavresample version macros.
+ * @ingroup lavd
+ * Libavdevice version macros
  */
 
 #include "libavutil/version.h"
 
-#define LIBAVRESAMPLE_VERSION_MAJOR  3
-#define LIBAVRESAMPLE_VERSION_MINOR  6
-#define LIBAVRESAMPLE_VERSION_MICRO  0
+#define LIBAVDEVICE_VERSION_MAJOR  58
+#define LIBAVDEVICE_VERSION_MINOR   4
+#define LIBAVDEVICE_VERSION_MICRO 101
 
-#define LIBAVRESAMPLE_VERSION_INT  AV_VERSION_INT(LIBAVRESAMPLE_VERSION_MAJOR, \
-                                                  LIBAVRESAMPLE_VERSION_MINOR, \
-                                                  LIBAVRESAMPLE_VERSION_MICRO)
-#define LIBAVRESAMPLE_VERSION          AV_VERSION(LIBAVRESAMPLE_VERSION_MAJOR, \
-                                                  LIBAVRESAMPLE_VERSION_MINOR, \
-                                                  LIBAVRESAMPLE_VERSION_MICRO)
-#define LIBAVRESAMPLE_BUILD        LIBAVRESAMPLE_VERSION_INT
+#define LIBAVDEVICE_VERSION_INT AV_VERSION_INT(LIBAVDEVICE_VERSION_MAJOR, \
+                                               LIBAVDEVICE_VERSION_MINOR, \
+                                               LIBAVDEVICE_VERSION_MICRO)
+#define LIBAVDEVICE_VERSION     AV_VERSION(LIBAVDEVICE_VERSION_MAJOR, \
+                                           LIBAVDEVICE_VERSION_MINOR, \
+                                           LIBAVDEVICE_VERSION_MICRO)
+#define LIBAVDEVICE_BUILD       LIBAVDEVICE_VERSION_INT
 
-#define LIBAVRESAMPLE_IDENT        "Lavr" AV_STRINGIFY(LIBAVRESAMPLE_VERSION)
+#define LIBAVDEVICE_IDENT       "Lavd" AV_STRINGIFY(LIBAVDEVICE_VERSION)
 
 /**
  * FF_API_* defines may be placed below to indicate public API that will be
@@ -47,4 +47,4 @@
  * the public API and may change, break or disappear at any time.
  */
 
-#endif /* AVRESAMPLE_VERSION_H */
+#endif /* AVDEVICE_VERSION_H */

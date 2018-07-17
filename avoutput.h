@@ -5,7 +5,7 @@
 #include <QQuickFramebufferObject>
 #include <QMutex>
 
-#include "avplayer.h"
+#include "AVPlayer.h"
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOffscreenSurface>
@@ -14,6 +14,7 @@
 #include <QOpenGLTexture>
 #include <QDateTime>
 #include <QQuickWindow>
+#include <QTimer>
 
 class AVOutput : public QQuickFramebufferObject
 {
@@ -105,6 +106,7 @@ public:
         , mLastTime(0)
         , mFps(0)
         , mIsInitPbo(false)
+        , mIsNeedNewUpdate(false)
     {
 //        m_format.width = 0;
 //        m_format.height = 0;
@@ -152,5 +154,6 @@ private:
     int mLastTime;
     int mFps;
     bool mIsInitPbo;
+    bool mIsNeedNewUpdate;
 };
 #endif // AVOUTPUT_H

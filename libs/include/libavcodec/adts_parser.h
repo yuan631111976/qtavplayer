@@ -1,6 +1,4 @@
 /*
- * copyright (c) 2006 Michael Niedermayer <michaelni@gmx.at>
- *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -18,33 +16,22 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVUTIL_X86_TIMER_H
-#define AVUTIL_X86_TIMER_H
+#ifndef AVCODEC_ADTS_PARSER_H
+#define AVCODEC_ADTS_PARSER_H
 
+#include <stddef.h>
 #include <stdint.h>
 
-#if HAVE_INLINE_ASM
+#define AV_AAC_ADTS_HEADER_SIZE 7
 
-#define FF_TIMER_UNITS "decicycles"
-#define AV_READ_TIME read_time
+/**
+ * Extract the number of samples and frames from AAC data.
+ * @param[in]  buf     pointer to AAC data buffer
+ * @param[out] samples Pointer to where number of samples is written
+ * @param[out] frames  Pointer to where number of frames is written
+ * @return Returns 0 on success, error code on failure.
+ */
+int av_adts_header_parse(const uint8_t *buf, uint32_t *samples,
+                         uint8_t *frames);
 
-static inline uint64_t read_time(void)
-{
-    uint32_t a, d;
-    __asm__ volatile(
-#if ARCH_X86_64 || defined(__SSE2__)
-                     "lfence \n\t"
-#endif
-                     "rdtsc  \n\t"
-                     : "=a" (a), "=d" (d));
-    return ((uint64_t)d << 32) + a;
-}
-
-#elif HAVE_RDTSC
-
-#include <intrin.h>
-#define AV_READ_TIME __rdtsc
-
-#endif /* HAVE_INLINE_ASM */
-
-#endif /* AVUTIL_X86_TIMER_H */
+#endif /* AVCODEC_ADTS_PARSER_H */

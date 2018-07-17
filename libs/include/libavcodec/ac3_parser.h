@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2002-2004 Michael Niedermayer <michaelni@gmx.at>
+ * AC-3 parser prototypes
+ * Copyright (c) 2003 Fabrice Bellard
+ * Copyright (c) 2003 Michael Niedermayer
  *
  * This file is part of FFmpeg.
  *
@@ -18,11 +20,17 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVUTIL_REVERSE_H
-#define AVUTIL_REVERSE_H
+#ifndef AVCODEC_AC3_PARSER_H
+#define AVCODEC_AC3_PARSER_H
 
+#include <stddef.h>
 #include <stdint.h>
 
-extern const uint8_t ff_reverse[256];
+/**
+ * Extract the bitstream ID and the frame size from AC-3 data.
+ */
+int av_ac3_parse_header(const uint8_t *buf, size_t size,
+                        uint8_t *bitstream_id, uint16_t *frame_size);
 
-#endif /* AVUTIL_REVERSE_H */
+
+#endif /* AVCODEC_AC3_PARSER_H */

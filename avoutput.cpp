@@ -1,12 +1,10 @@
-#include "avoutput.h"
+#include "AVOutput.h"
 #include <QDebug>
 #include <QDateTime>
 
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObjectFormat>
 #include <string.h>
-
-#include "U_YuvManager.h"
 
 //顶点数组(物体表面坐标取值范围是-1到1,数组坐标：左下，右下，左上，右上)
 //左上 -1.0f  -1.0f
@@ -63,19 +61,12 @@ AVRenderer::~AVRenderer()
 }
 
 void AVRenderer::render() {
-//    if(m_buffer){
-//        mMutex.lock();
-//        paint();
-//        mMutex.unlock();
-//    }
     paint();
 }
 
 QOpenGLFramebufferObject *AVRenderer::createFramebufferObject(const QSize &size) {
     QOpenGLFramebufferObject *fbo = QQuickFramebufferObject::Renderer::createFramebufferObject(size);
     m_renderFbo = new QOpenGLFramebufferObject(size,fbo->format());
-
-    YuvManager::GetInstance()->SetTargetSize(size.width(),size.height());
     return fbo;
 }
 
@@ -84,39 +75,18 @@ void AVRenderer::updateVideoFrame(const char* pBuffer,VideoFormat *format){
         return;
     mMutex.lock();
 
-    bool IsNeedNewUpdate = false;
+
     if(m_format.width != format->width || m_format.height != format->height){
         m_format.format = format->format;
         m_format.width = format->width;
         m_format.height = format->height;
         m_format.rotate = format->rotate;
         m_format.mutex = NULL;
-        IsNeedNewUpdate = true;
-        if(m_program != NULL){
-            m_program->deleteLater();
-            m_program = NULL;
-        }
-
-        if(m_vbo != NULL){
-            delete m_vbo;
-            m_vbo = NULL;
-        }
-
-        if(m_ibo != NULL){
-            delete m_ibo;
-            m_ibo = NULL;
-        }
-
-        if(m_vao != NULL){
-            m_vao->deleteLater();
-            m_vao = NULL;
-        }
-
-        glDeleteTextures(TEXTURE_NUMBER, textureId);
+        mIsNeedNewUpdate = true;
     }
 
     int newBufferSize = format->width * format->height * 3 / 2;
-    if(IsNeedNewUpdate){
+    if(mIsNeedNewUpdate){
         if(m_buffer != NULL){
             delete m_buffer;
         }
@@ -217,38 +187,36 @@ void AVRenderer::init(){
     }
 }
 
-#include <QDateTime>
-#include <QFile>
-QFile file("F:/testffmepg/ts/te.yuv");
 void AVRenderer::paint(){
-
-    Yuv *yuv = YuvManager::GetInstance()->GetShowYuv();
-    if(yuv == NULL || yuv->Width_n4 <= 0 || yuv->Height_n4 <= 0)
+    if(m_format.width <= 0 || m_format.height <= 0)
         return;
-//    static int index = 0;
-//    index++;
-//    if(index >= 500){
-//        if(!file.isOpen()){
-//            file.open(QFile::WriteOnly);
-//            file.write((char *)yuv->YData_pc1,yuv->YSize_n4);
-//            file.write((char *)yuv->UData_pc1,yuv->USize_n4);
-//            file.write((char *)yuv->VData_pc1,yuv->VSize_n4);
-//            file.close();
-//            exit(0);
-//        }
-//    }
 
+    if(mIsNeedNewUpdate){
+        if(m_program != NULL){
+            m_program->deleteLater();
+            m_program = NULL;
+        }
 
+        if(m_vbo != NULL){
+            delete m_vbo;
+            m_vbo = NULL;
+        }
 
-    if(m_format.width != yuv->ShowWidth_n4 || m_format.height != yuv->ShowHeight_n4){
+        if(m_ibo != NULL){
+            delete m_ibo;
+            m_ibo = NULL;
+        }
+
+        if(m_vao != NULL){
+            m_vao->deleteLater();
+            m_vao = NULL;
+        }
+
         glDeleteTextures(TEXTURE_NUMBER, textureId);
-        m_format.format = AV_PIX_FMT_YUV420P;
-        m_format.width = yuv->ShowWidth_n4;
-        m_format.height = yuv->ShowHeight_n4;
-        m_format.rotate = 0;
-        m_format.mutex = NULL;
 
         init();
+
+        mIsNeedNewUpdate = false;
     }
 
     m_renderFbo->bind();
@@ -259,57 +227,13 @@ void AVRenderer::paint(){
     qint64 textureSize = m_format.width*m_format.height;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_renderFbo->texture());
-
-//    for(int j = 0;j < TEXTURE_NUMBER;j++){
-//        glActiveTexture(GL_TEXTURE1 + j);
-//        m_pbo[pboIndex][j].bind();
-//        if(j == 0){//y
-////            if(m_pbo[pboIndex][j].size() != textureSize)
-////                m_pbo[pboIndex][j].allocate(textureSize);
-////            m_pbo[pboIndex][j].write(0,m_buffer, textureSize);
-
-//            if(m_pbo[pboIndex][j].size() != textureSize * size)
-//                m_pbo[pboIndex][j].allocate(textureSize * size);
-
-//            qint64 begin = QDateTime::currentMSecsSinceEpoch();
-//            for(int i = 0;i < size;i++){
-//                m_pbo[pboIndex][j].write(i * textureSize,m_buffer, textureSize);
-//            }
-
-
-//            glBindTexture(GL_TEXTURE_2D, textureId[j]);
-//            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width * size,m_format.height * size, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
-
-//            qDebug() << "haoshi : " << QDateTime::currentMSecsSinceEpoch() - begin;
-//        }else{//uv
-//            int uvsize = textureSize / 4;
-//            if(m_pbo[pboIndex][j].size() != uvsize)
-//                m_pbo[pboIndex][j].allocate(uvsize);
-//            if(j == 1){
-//                m_pbo[pboIndex][j].write(0,m_buffer+textureSize, uvsize);
-//                for(int i = 0;i < size;i++){
-//                    m_pbo[pboIndex][j].write(0,m_buffer+textureSize, uvsize);
-//                }
-
-//            }else{
-//                m_pbo[pboIndex][j].write(0,m_buffer+(textureSize+uvsize), uvsize);
-//                for(int i = 0;i < size;i++){
-//                    m_pbo[pboIndex][j].write(0,m_buffer+(textureSize+uvsize), uvsize);
-//                }
-//            }
-//            glBindTexture(GL_TEXTURE_2D, textureId[j]);
-//            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width / 2,m_format.height / 2, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
-//        }
-//        m_pbo[pboIndex][j].release();
-//    }
-
     for(int j = 0;j < TEXTURE_NUMBER;j++){
         glActiveTexture(GL_TEXTURE1 + j);
         m_pbo[pboIndex][j].bind();
         if(j == 0){//y
             if(m_pbo[pboIndex][j].size() != textureSize)
                 m_pbo[pboIndex][j].allocate(textureSize);
-            m_pbo[pboIndex][j].write(0,yuv->YData_pc1, textureSize);
+            m_pbo[pboIndex][j].write(0,m_buffer, textureSize);
             glBindTexture(GL_TEXTURE_2D, textureId[j]);
             glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width,m_format.height, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
         }else{//uv
@@ -317,9 +241,9 @@ void AVRenderer::paint(){
             if(m_pbo[pboIndex][j].size() != uvsize)
                 m_pbo[pboIndex][j].allocate(uvsize);
             if(j == 1){
-                m_pbo[pboIndex][j].write(0,yuv->UData_pc1, uvsize);
+                m_pbo[pboIndex][j].write(0,m_buffer+textureSize, uvsize);
             }else{
-                m_pbo[pboIndex][j].write(0,yuv->VData_pc1, uvsize);
+                m_pbo[pboIndex][j].write(0,m_buffer+(textureSize+uvsize), uvsize);
             }
             glBindTexture(GL_TEXTURE_2D, textureId[j]);
             glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width / 2,m_format.height / 2, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
@@ -327,50 +251,27 @@ void AVRenderer::paint(){
         m_pbo[pboIndex][j].release();
     }
 
-//    for(int j = 0;j < TEXTURE_NUMBER;j++){
-//        glActiveTexture(GL_TEXTURE1 + j);
-//        m_pbo[pboIndex][j].bind();
-//        if(j == 0){//y
-//            if(m_pbo[pboIndex][j].size() != textureSize)
-//                m_pbo[pboIndex][j].allocate(textureSize);
-//            m_pbo[pboIndex][j].write(0,m_buffer, textureSize);
-//            glBindTexture(GL_TEXTURE_2D, textureId[j]);
-//            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width,m_format.height, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
-//        }else{//uv
-//            int uvsize = textureSize / 4;
-//            if(m_pbo[pboIndex][j].size() != uvsize)
-//                m_pbo[pboIndex][j].allocate(uvsize);
-//            if(j == 1){
-//                m_pbo[pboIndex][j].write(0,m_buffer+textureSize, uvsize);
-//            }else{
-//                m_pbo[pboIndex][j].write(0,m_buffer+(textureSize+uvsize), uvsize);
-//            }
-//            glBindTexture(GL_TEXTURE_2D, textureId[j]);
-//            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width / 2,m_format.height / 2, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
-//        }
-//        m_pbo[pboIndex][j].release();
-//    }
-//    for(int j = 0;j < TEXTURE_NUMBER;j++){
-//        m_pbo[nextPboIndex][j].bind();
-//        if(j == 0){
-//            glBindTexture(GL_TEXTURE_2D, textureId[j]);
-//            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width,m_format.height, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
-//        }else{
-//            glBindTexture(GL_TEXTURE_2D, textureId[j]);
-//            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width / 2,m_format.height / 2, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
-//        }
-//        m_pbo[nextPboIndex][j].release();
-//    }
+    for(int j = 0;j < TEXTURE_NUMBER;j++){
+        m_pbo[nextPboIndex][j].bind();
+        if(j == 0){
+            glBindTexture(GL_TEXTURE_2D, textureId[j]);
+            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width,m_format.height, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
+        }else{
+            glBindTexture(GL_TEXTURE_2D, textureId[j]);
+            glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width / 2,m_format.height / 2, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
+        }
+        m_pbo[nextPboIndex][j].release();
+    }
 
     int rotate = m_format.rotate;
     switch (m_output->orientation()) {
-    case AVOutput::Orientation::LandscapeOrientation:
+    case AVOutput::LandscapeOrientation:
         rotate += 90;
         break;
-    case AVOutput::Orientation::InvertedLandscapeOrientation:
+    case AVOutput::InvertedLandscapeOrientation:
         rotate += 270;
         break;
-    case AVOutput::Orientation::InvertedPortraitOrientation:
+    case AVOutput::InvertedPortraitOrientation:
         rotate += 180;
         break;
     }
@@ -423,8 +324,8 @@ void AVRenderer::paint(){
 AVOutput::AVOutput(QQuickItem *parent)
     : QQuickFramebufferObject(parent)
     , m_player(NULL)
-    , mFillMode(FillMode::PreserveAspectFit)
-    , mOrientation(Orientation::PrimaryOrientation)
+    , mFillMode(PreserveAspectFit)
+    , mOrientation(PrimaryOrientation)
     , m_fps(30)
     , m_isDestroy(false)
     , mBackgroundColor(QColor(255,255,0,255))

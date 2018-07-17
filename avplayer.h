@@ -1,40 +1,21 @@
 #ifndef AVPLAYER_H
 #define AVPLAYER_H
 
+
 #include <QtQml/QQmlParserStatus>
 #include <QAudioOutput>
 #include <QBuffer>
-#include <QObject>
-#include <QEvent>
-#include <QTimer>
-#include "avcodec.h"
+#include "AVMediaPlayer.h"
+#include "AVCodec.h"
+#include "AVDefine.h"
+#include "AVThread.h"
+#include "AVMediaCallback.h"
 
-#define EVENT_PLAYER_DRAW 1001
-
-class AVPlayerThread : public QThread{
-    Q_OBJECT
-protected:
-    bool event(QEvent *event){
-        if(event->type() == EVENT_PLAYER_DRAW){
-            emit onPlayerEvent();
-            return true;
-        }
-        return QThread::event(event);
-    }
-signals:
-    void onPlayerEvent();
-};
-
-class AVPlayer : public QObject ,public QQmlParserStatus
+class AVTimer;
+class AVPlayer : public QObject , public AVMediaCallback , public AVMediaPlayer ,public QQmlParserStatus
 {
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)
-    Q_ENUMS(Loop)
-    Q_ENUMS(PlaybackState)
-    Q_ENUMS(Status)
-    Q_ENUMS(Error)
-    Q_ENUMS(ChannelLayout)
-    Q_ENUMS(AVPlayer::BufferMode)
 
     Q_PROPERTY(QString source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(bool autoLoad READ autoLoad WRITE setAutoLoad NOTIFY autoLoadChanged)
@@ -45,60 +26,13 @@ class AVPlayer : public QObject ,public QQmlParserStatus
     Q_PROPERTY(bool renderFirstFrame READ renderFirstFrame WRITE setRenderFirstFrame)
     Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
     Q_PROPERTY(float playRate READ playRate WRITE setPlayRate NOTIFY playRateChanged)
-    Q_PROPERTY(int pos READ pos WRITE seek)
-    Q_PROPERTY(int duration READ duration)
+    Q_PROPERTY(int pos READ pos WRITE seek NOTIFY positionChanged)
+    Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int bufferSize READ bufferSize WRITE setBufferSize)
-    Q_PROPERTY(AVPlayer::BufferMode bufferMode READ bufferMode WRITE setBufferMode)
+    Q_PROPERTY(int bufferMode READ getMediaBufferMode WRITE setMediaBufferMode)
 public:
-
-    enum Loop { Infinite = -1 };
-
-    enum PlaybackState {
-        StoppedState,
-        PlayingState,
-        PausedState
-    };
-    enum Status {
-        UnknownStatus = AVCodec2::Status::UnknownStatus,
-        NoMedia = AVCodec2::Status::NoMedia ,
-        Loading = AVCodec2::Status::Loading ,
-        Loaded = AVCodec2::Status::Loaded ,
-        Stalled = AVCodec2::Status::Stalled ,
-        Buffering = AVCodec2::Status::Buffering ,
-        Buffered = AVCodec2::Status::Buffered ,
-        EndOfMedia = AVCodec2::Status::EndOfMedia ,
-        InvalidMedia = AVCodec2::Status::InvalidMedia
-    };
-    enum Error {
-        NoError,
-        ResourceError,
-        FormatError,
-        NetworkError,
-        AccessDenied,
-        ServiceMissing
-    };
-
-    enum ChannelLayout {
-        ChannelLayoutAuto,
-        Left,
-        Right,
-        Mono,
-        Stereo
-    };
-
-    enum BufferMode{
-        Time = AVCodec2::BufferMode::Time,//ms
-        Packet = AVCodec2::BufferMode::Packet
-    };
-
-    enum SynchMode{
-        AUDIO, //以音频时间为基准，默认
-        TIMER //以系统时间为基准
-    };
-
     AVPlayer();
     ~AVPlayer();
-
 
     QString source() const;
     void setSource(const QString&);
@@ -111,7 +45,7 @@ public:
 
     bool hasAudio() const;
     bool hasVideo() const;
-    Status status() const;
+    int status() const;
 
     bool renderFirstFrame() const;
     void setRenderFirstFrame(bool);
@@ -124,23 +58,40 @@ public:
 
     float playRate() const;
     void setPlayRate(float);
+    void slotSetPlayRate(float);
 
     int pos() const;
     int duration() const;
 
-    BufferMode bufferMode() const;
-    void setBufferMode(BufferMode mode);
+    int getMediaBufferMode() const;
+    void setMediaBufferMode(int mode);
 
     //QQmlParserStatus
     virtual void classBegin();
     virtual void componentComplete();
-
-    /////
+    //////
+public slots:
+    void play();
+    void pause();
+    void stop();
+    void restart();
+    void seek(int time);
+public :
+    void seekImpl(int time);
+//avmediacallback实现
+public :
+    void mediaUpdateAudioFormat(const QAudioFormat&);
+    void mediaUpdateAudioFrame(const QByteArray &);
+    void mediaUpdateVideoFrame(const char*,void*);
+    void mediaDurationChanged(int);
+    void mediaStatusChanged(AVDefine::MediaStatus);
+    void mediaHasAudioChanged();
+    void mediaHasVideoChanged();
+    void mediaCanRenderFirstFrame();
 
 signals :
     void durationChanged();
     void positionChanged();
-
     void sourceChanged();
     void autoLoadChanged();
     void autoPlayChanged();
@@ -149,63 +100,153 @@ signals :
     void statusChanged();
     void volumeChanged();
     void playRateChanged();
-
-
+    void playStatusChanged();
     void updateVideoFrame(const char*,VideoFormat*);
-public slots:
-    void play();
-    void pause();
-    void stop();
-    void restart();
-    void seek(int time);
-private slots :
-    void updateAudioFormat(QAudioFormat);
-    void updateAudioFrame(const QByteArray &buffer);
-    void exec();
-    void canRenderFirstFrame();
+
+public :
+    void requestRender();
     void requestAudioData();
-    void statusChanged(AVCodec2::Status);
-    void slotDurationChanged(int);
-    /** 更新下载速率bytes len */
-    void updateInternetSpeed(int speed);
 private :
     void wakeupPlayer();
+
+//    bool mIsPaused;
+//    bool mIsPlaying;
+    void setIsPaused(bool);
+    bool getIsPaused();
+
+    void setIsPlaying(bool);
+    bool getIsPlaying();
+//avmediaplayer 实现
+public slots:
+    /** 设置文件路径 */
+    void setFileName(const char *path);
+    /** 获取当前音量 */
+    int getVolume();
+    /** 设置播放速率(0.125 - 8)
+    *   0.125 以1/8的速度播放(慢速播放)
+    *   8 以8/1的速度播放(快速播放)
+    *   慢速播放公式(rate = 1.0 / 倍数(最大为8))
+    *   快速播放公式(rate = 1.0 * 倍数(最大为8))
+    */
+    void setPlaybackRate(float rate);
+    /** 获取当前播放速率 */
+    float getPlaybackRate();
+    /** 获取当前视频的总时长 */
+    int getDuration();
+    /** 获取当前视频的播放位置 */
+    int getPosition();
+    /** 获取当前媒体状态 */
+    int getCurrentMediaStatus();
+    /** 获取当前播放状态 */
+    int getPlaybackState();
+    /** 设置播放回调接口 */
+    void setPlayerCallback(AVPlayerCallback *);
 private:
     AVCodec2 *mCodec;
-    Status mStatus;
-    SynchMode mSynchMode;
+    AVDefine::MediaStatus mStatus;
+    AVDefine::SynchMode mSynchMode;
 
     bool mAutoLoad;
     bool mAutoPlay;
     bool mRrnderFirstFrame;
-    BufferMode mBufferMode;
+    AVDefine::MediaBufferMode mMediaBufferMode;
     int mBufferSize;
     float mVolume;
     int mDuration;
     int mPos;
     int mSeekTime;
+    bool mIsSeeked;//是否拖动完成
+    bool mIsAudioWaiting;
+    QMutex mIsSeekedMutex;
 
     QString mSource;
 
     /** 组件是否加载完成 */
     bool mComplete;
     /** 视频播放控制线程 */
-    AVPlayerThread mThread;
+    AVThread mThread;
+    AVThread mThread2;
+    AVTimer *mAudioTimer;
 
 
     QMutex mAudioMutex;
     QAudioOutput* mAudio;
-    QBuffer mBuffer;
     QIODevice *mAudioBuffer;
-    QTimer m_audioPushTimer;
+    QMutex mAudioBufferMutex;
+
     int mLastTime;
     bool m_isDestroy;
     bool mIsPaused;
     bool mIsPlaying;
+    bool mIsSetPlayRate;
+    bool mIsSetPlayRateBeforeIsPaused;
+    QMutex mStatusMutex;
 
     QWaitCondition mCondition;
     QMutex mMutex;
-    bool mIsAudioWaiting;
+
+    AVPlayerCallback *mPlayerCallback;
+    /** 播放状态 */
+    AVDefine::PlaybackState mPlaybackState;
+};
+
+class AVPlayerTask : public Task{
+public :
+    ~AVPlayerTask(){}
+    enum AVPlayerTaskCommand{
+        AVPlayerTaskCommand_Render,
+        AVPlayerTaskCommand_Seek ,
+        AVPlayerTaskCommand_SetPlayRate
+    };
+    AVPlayerTask(AVPlayer *player,AVPlayerTaskCommand command,double param = 0):
+        mPlayer(player),command(command),param(param){this->type = (int)command;}
+protected :
+    /** 现程实现 */
+    virtual void run();
+private :
+    AVPlayer *mPlayer;
+    AVPlayerTaskCommand command;
+    double param;
+};
+
+class AVTimer : public QThread{
+
+public :
+    AVTimer(AVPlayer *player) : mIsRunning(true),mPlayer(player){
+        start();
+    }
+    ~AVTimer(){
+        mPlayer = NULL;
+        stop();
+        quit();
+        wait(100);
+        terminate();
+    }
+    virtual void run(){
+        while(mIsRunning){
+            if(mPlayer != NULL)
+                mPlayer->requestAudioData();
+            mMutex.lock();
+            mCondition.wait(&mMutex,20);
+            mMutex.unlock();
+        }
+    }
+
+    void begin(){
+        mIsRunning = true;
+        start();
+    }
+
+    void stop(){
+        mIsRunning = false;
+        mCondition.wakeAll();
+    }
+
+private :
+    bool mIsRunning;
+    QWaitCondition mCondition;
+    QMutex mMutex;
+    AVPlayer *mPlayer;
 };
 
 #endif // AVPLAYER_H

@@ -16,30 +16,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVUTIL_WCHAR_FILENAME_H
-#define AVUTIL_WCHAR_FILENAME_H
+#ifndef AVUTIL_HWCONTEXT_MEDIACODEC_H
+#define AVUTIL_HWCONTEXT_MEDIACODEC_H
 
-#if defined(_WIN32) && !defined(__MINGW32CE__)
-#include <windows.h>
-#include "mem.h"
+/**
+ * MediaCodec details.
+ *
+ * Allocated as AVHWDeviceContext.hwctx
+ */
+typedef struct AVMediaCodecDeviceContext {
+    /**
+     * android/view/Surface handle, to be filled by the user.
+     *
+     * This is the default surface used by decoders on this device.
+     */
+    void *surface;
+} AVMediaCodecDeviceContext;
 
-av_warn_unused_result
-static inline int utf8towchar(const char *filename_utf8, wchar_t **filename_w)
-{
-    int num_chars;
-    num_chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename_utf8, -1, NULL, 0);
-    if (num_chars <= 0) {
-        *filename_w = NULL;
-        return 0;
-    }
-    *filename_w = (wchar_t *)av_mallocz_array(num_chars, sizeof(wchar_t));
-    if (!*filename_w) {
-        errno = ENOMEM;
-        return -1;
-    }
-    MultiByteToWideChar(CP_UTF8, 0, filename_utf8, -1, *filename_w, num_chars);
-    return 0;
-}
-#endif
-
-#endif /* AVUTIL_WCHAR_FILENAME_H */
+#endif /* AVUTIL_HWCONTEXT_MEDIACODEC_H */
