@@ -11,7 +11,7 @@ AVPlayer::AVPlayer()
     , mBufferSize(5000)
     , mRrnderFirstFrame(true)
     , mLastTime(0)
-    , m_isDestroy(false)
+    , mIsDestroy(false)
     , mStatus(AVDefine::MediaStatus_UnknownStatus)
     , mSynchMode(AVDefine::AUDIO)
     , mVolume(1.0)
@@ -28,6 +28,9 @@ AVPlayer::AVPlayer()
     , mIsSetPlayRate(false)
     , mIsSetPlayRateBeforeIsPaused(false)
     , mIsAudioWaiting(NULL)
+    , mIsDecoded(false)
+    , mRenderData(NULL)
+    , mIsClickedPlay(true)
 {
     mCodec = new AVCodec2;
     mCodec->setMediaCallback(this);
@@ -40,7 +43,7 @@ AVPlayer::~AVPlayer(){
     mAudioTimer->stop();
     delete mAudioTimer;
 
-    m_isDestroy = true;
+    mIsDestroy = true;
     mCondition.wakeAll();
 
     mThread.stop();
@@ -77,9 +80,13 @@ void AVPlayer::componentComplete(){
 }
 
 void AVPlayer::play(){
-    if(getIsPlaying())
+    if(getIsPlaying()){
+        if(getIsPaused())
+            restart();
         return;
+    }
 
+    mIsClickedPlay = true;
     mAudioMutex.lock();
     if(mAudio == NULL){
         mAudioMutex.unlock();
@@ -111,20 +118,18 @@ void AVPlayer::play(){
 void AVPlayer::pause(){
     if(getIsPaused() || !getIsPlaying())
         return;
-
     setIsPaused(true);
 //    mIsPaused = true;
     mAudioTimer->stop();
     mAudioMutex.lock();
 
     if(mAudio && mAudio->state() == QAudio::ActiveState){
-        mAudioBufferMutex.lock();
-        mAudioBuffer = NULL;
-        mAudioBufferMutex.unlock();
+//        mAudioBufferMutex.lock();
+//        mAudioBuffer = NULL;
+//        mAudioBufferMutex.unlock();
         mAudio->suspend();
     }
     mAudioMutex.unlock();
-
 
     mPlaybackState = AVDefine::PausedState;
     if(mPlayerCallback != NULL)
@@ -175,8 +180,9 @@ void AVPlayer::restart(){
             mAudioBufferMutex.unlock();
             requestAudioData();
         }else{
-            if(mAudio->state() == QAudio::SuspendedState)
+            if(mAudio->state() == QAudio::SuspendedState){
                 mAudio->resume();
+            }
         }
     }
     mAudioMutex.unlock();
@@ -376,7 +382,6 @@ void AVPlayer::mediaUpdateAudioFormat(const QAudioFormat &format){
 }
 
 void AVPlayer::mediaUpdateAudioFrame(const QByteArray &buffer){
-
     mAudioBufferMutex.lock();
     if(mAudioBuffer != NULL){
         mAudioBuffer->write(buffer);
@@ -439,18 +444,19 @@ bool AVPlayer::getIsPlaying(){
 }
 
 void AVPlayer::requestRender(){
-    if(m_isDestroy || getIsPaused() || !mAudio){
+    if(mIsDestroy || getIsPaused() || !mAudio){
         return;
     }
     mCodec->renderNextFrame();
     int nextTime = mCodec->getCurrentVideoTime();
     mAudioMutex.lock();
     int currentTime = mAudio->processedUSecs() / 1000;
+
     mAudioMutex.unlock();//----------- 5
     currentTime *= mCodec->getPlayRate();
     currentTime += mSeekTime;
     int sleepTime = nextTime - currentTime < 0 ? 0 : nextTime - currentTime;
-
+//    qDebug() << "------------------ sleepTime : " << sleepTime;
     if(currentTime - nextTime >= 1000 && !mIsAudioWaiting){ //某些视频解码太耗时，误差太大的话，先将音频暂停，在继续播放
         mAudioBufferMutex.lock();
         mAudioBuffer = NULL;
@@ -477,12 +483,19 @@ void AVPlayer::requestRender(){
         mMutex.unlock();
     }
     mLastTime = nextTime;
+
     wakeupPlayer();
 }
 
 void AVPlayer::mediaCanRenderFirstFrame(){
-    if(mRrnderFirstFrame)
-        mCodec->renderFirstFrame(); //获取第一帧，并渲染
+    if(mRrnderFirstFrame){
+        mIsDecoded = false;
+        int i = 0;
+        while(!mIsDecoded && i++ < 10){
+            mCodec->renderFirstFrame(); //获取第一帧，并渲染
+        }
+
+    }
 }
 
 void AVPlayer::mediaStatusChanged(AVDefine::MediaStatus status){
@@ -499,8 +512,9 @@ void AVPlayer::mediaStatusChanged(AVDefine::MediaStatus status){
         }
         case AVDefine::MediaStatus_Buffered :{
             //qDebug() <<"buffered played";
-            if(mStatus != AVDefine::MediaStatus_Seeking)
+            if(mStatus != AVDefine::MediaStatus_Seeking && (this->autoPlay() || mIsClickedPlay))
                 play();
+            mIsClickedPlay = false;
             break;
         }
         case AVDefine::MediaStatus_Played :{
@@ -542,12 +556,18 @@ int AVPlayer::duration() const{
     return mDuration;
 }
 
-void AVPlayer::mediaUpdateVideoFrame(const char* pBuffer,void* f){
+VideoFormat *AVPlayer::getRenderData(){
+    return mRenderData;
+}
+
+void AVPlayer::mediaUpdateVideoFrame(void* f){
     if(mPlayerCallback != NULL){
         VideoFormat *format = (VideoFormat *)f;
-        mPlayerCallback->updateVideoFrame(pBuffer,format->width,format->height,format->rotate,format->format);
+        mPlayerCallback->updateVideoFrame(0,format->width,format->height,format->rotate,format->format);
     }
-    emit updateVideoFrame(pBuffer,(VideoFormat *)f);
+    mRenderData = (VideoFormat *)f;
+    mIsDecoded = true;
+    emit updateVideoFrame(mRenderData);
 }
 
 void AVPlayer::mediaHasAudioChanged(){

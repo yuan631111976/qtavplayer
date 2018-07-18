@@ -33,9 +33,9 @@ static const GLfloat textureVertices[] = {
 
 AVRenderer::~AVRenderer()
 {
-    if(m_buffer != NULL){
-        delete m_buffer;
-    }
+//    if(m_buffer != NULL){
+//        delete m_buffer;
+//    }
 
     if(m_program != NULL){
         m_program->deleteLater();
@@ -70,31 +70,21 @@ QOpenGLFramebufferObject *AVRenderer::createFramebufferObject(const QSize &size)
     return fbo;
 }
 
-void AVRenderer::updateVideoFrame(const char* pBuffer,VideoFormat *format){
-    if(format == NULL || pBuffer == NULL)
+void AVRenderer::updateVideoFrame(VideoFormat *format){
+    if(format == NULL)
         return;
-    mMutex.lock();
-
-
     if(m_format.width != format->width || m_format.height != format->height){
         m_format.format = format->format;
         m_format.width = format->width;
         m_format.height = format->height;
         m_format.rotate = format->rotate;
-        m_format.mutex = NULL;
         mIsNeedNewUpdate = true;
     }
 
-    int newBufferSize = format->width * format->height * 3 / 2;
-    if(mIsNeedNewUpdate){
-        if(m_buffer != NULL){
-            delete m_buffer;
-        }
-        m_buffer = new unsigned char[newBufferSize];
-    }
-
-    memcpy(m_buffer,pBuffer,newBufferSize);
-    mMutex.unlock();
+    mDataMutex.lock();
+    m_format.renderFrame = format->renderFrame;
+    m_format.renderFrameMutex = format->renderFrameMutex;
+    mDataMutex.unlock();
 }
 
 void AVRenderer::init(){
@@ -123,21 +113,24 @@ void AVRenderer::init(){
         textureLocaltion[2] = m_program->uniformLocation("tex_v");
     }
 
-    //初使化纹理
-    glGenTextures(TEXTURE_NUMBER, textureId);
-    for(int i = 0; i < TEXTURE_NUMBER; i++)
-    {
-        glBindTexture(GL_TEXTURE_2D, textureId[i]);
-        if(i == 0){
-            glTexImage2D ( GL_TEXTURE_2D, 0, GL_LUMINANCE, m_format.width,m_format.height, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
-        }else{
-            glTexImage2D ( GL_TEXTURE_2D, 0, GL_LUMINANCE, m_format.width / 2,m_format.height / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
+    if(!mIsInitTextures){
+        //初使化纹理
+        glGenTextures(TEXTURE_NUMBER, textureId);
+        for(int i = 0; i < TEXTURE_NUMBER; i++)
+        {
+            glBindTexture(GL_TEXTURE_2D, textureId[i]);
+            if(i == 0){
+                glTexImage2D ( GL_TEXTURE_2D, 0, GL_LUMINANCE, m_format.width,m_format.height, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
+            }else{
+                glTexImage2D ( GL_TEXTURE_2D, 0, GL_LUMINANCE, m_format.width / 2,m_format.height / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
+            }
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         }
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
+    mIsInitTextures = true;
 
     if(!mIsInitPbo){
         for(int i = 0;i < 2;i++){
@@ -212,7 +205,9 @@ void AVRenderer::paint(){
             m_vao = NULL;
         }
 
-        glDeleteTextures(TEXTURE_NUMBER, textureId);
+        if(mIsInitTextures)
+            glDeleteTextures(TEXTURE_NUMBER, textureId);
+        mIsInitTextures = false;
 
         init();
 
@@ -227,29 +222,50 @@ void AVRenderer::paint(){
     qint64 textureSize = m_format.width*m_format.height;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_renderFbo->texture());
+
+    mDataMutex.lock();
+    m_format.renderFrameMutex->lock();
     for(int j = 0;j < TEXTURE_NUMBER;j++){
         glActiveTexture(GL_TEXTURE1 + j);
         m_pbo[pboIndex][j].bind();
+
+        int linesize = m_format.renderFrame->linesize[j];
+        uint8_t * data = m_format.renderFrame->data[j];
         if(j == 0){//y
             if(m_pbo[pboIndex][j].size() != textureSize)
                 m_pbo[pboIndex][j].allocate(textureSize);
-            m_pbo[pboIndex][j].write(0,m_buffer, textureSize);
+
+            if(linesize == m_format.width){
+                m_pbo[pboIndex][j].write(0,data , textureSize);
+            }else{
+                for (int i = 0; i<m_format.height; i++){
+                    m_pbo[pboIndex][j].write(i * m_format.width,data + i * linesize , m_format.width);
+                }
+            }
+
             glBindTexture(GL_TEXTURE_2D, textureId[j]);
             glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width,m_format.height, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
         }else{//uv
             int uvsize = textureSize / 4;
             if(m_pbo[pboIndex][j].size() != uvsize)
                 m_pbo[pboIndex][j].allocate(uvsize);
-            if(j == 1){
-                m_pbo[pboIndex][j].write(0,m_buffer+textureSize, uvsize);
+
+            if(linesize == m_format.width / 2){
+                m_pbo[pboIndex][j].write(0,data , uvsize);
             }else{
-                m_pbo[pboIndex][j].write(0,m_buffer+(textureSize+uvsize), uvsize);
+                for (int i = 0; i<m_format.height / 2; i++){
+                    m_pbo[pboIndex][j].write(i * m_format.width / 2,data + i * linesize , m_format.width / 2);
+                }
             }
+
             glBindTexture(GL_TEXTURE_2D, textureId[j]);
             glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width / 2,m_format.height / 2, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
         }
         m_pbo[pboIndex][j].release();
     }
+
+    m_format.renderFrameMutex->unlock();
+    mDataMutex.unlock();
 
     for(int j = 0;j < TEXTURE_NUMBER;j++){
         m_pbo[nextPboIndex][j].bind();
@@ -323,37 +339,37 @@ void AVRenderer::paint(){
 
 AVOutput::AVOutput(QQuickItem *parent)
     : QQuickFramebufferObject(parent)
-    , m_player(NULL)
+    , mPlayer(NULL)
     , mFillMode(PreserveAspectFit)
     , mOrientation(PrimaryOrientation)
-    , m_fps(30)
-    , m_isDestroy(false)
+    , mFps(30)
+    , mIsDestroy(false)
     , mBackgroundColor(QColor(255,255,0,255))
-    , m_reallyFps(0)
+    , mReallyFps(0)
 {
 //    setFlag(ItemHasContents);
-    connect(&m_timer,SIGNAL(timeout()),this,SLOT(update()));
-    m_timer.setInterval(1000 / m_fps);
-    m_timer.start();
+    connect(&mTimer,SIGNAL(timeout()),this,SLOT(update()));
+    mTimer.setInterval(1000 / mFps);
+    mTimer.start();
 }
 AVOutput::~AVOutput(){
-    m_isDestroy = true;
+    mIsDestroy = true;
 }
 
 QObject *AVOutput::source() const{
-    return m_player;
+    return mPlayer;
 }
 void AVOutput::setSource(QObject *source){
-    if(m_player){
-        disconnect(m_player,SIGNAL(updateVideoFrame(const char*,VideoFormat*)),
+    if(mPlayer){
+        disconnect(mPlayer,SIGNAL(updateVideoFrame(const char*,VideoFormat*)),
                 this,SIGNAL(updateVideoFrame(const char*,VideoFormat*)));
     }
-    if(m_player == source)
+    if(mPlayer == source)
         return;
-    m_player = (AVPlayer *)source;
+    mPlayer = (AVPlayer *)source;
 
-    connect(m_player,SIGNAL(updateVideoFrame(const char*,VideoFormat*)),
-            this,SIGNAL(updateVideoFrame(const char*,VideoFormat*)),Qt::DirectConnection);
+    connect(mPlayer,SIGNAL(updateVideoFrame(VideoFormat*)),
+            this,SIGNAL(updateVideoFrame(VideoFormat*)),Qt::DirectConnection);
     emit sourceChanged();
 }
 
@@ -365,21 +381,21 @@ void AVOutput::setFillMode(FillMode mode){
     fillModeChanged();
 }
 int AVOutput::fps() const{
-    return m_fps;
+    return mFps;
 }
 
 void AVOutput::setFps(int fps){
-    m_fps = fps;
-    m_timer.setInterval(1000 / m_fps);
+    mFps = fps;
+    mTimer.setInterval(1000 / mFps);
 }
 
 /** 真实的fps */
 int AVOutput::reallyFps() const{
-    return m_reallyFps;
+    return mReallyFps;
 }
 
 void  AVOutput::setReallyFps(int reallyFps){
-    this->m_reallyFps = reallyFps;
+    this->mReallyFps = reallyFps;
     emit reallyFpsChanged();
 }
 
@@ -422,7 +438,9 @@ QRect AVOutput::calculateGeometry(int w,int h){
 
 QQuickFramebufferObject::Renderer *AVOutput::createRenderer() const{
     AVRenderer *renderer = new AVRenderer((AVOutput *)this);
-    connect(this,SIGNAL(updateVideoFrame(const char*,VideoFormat*)),
-            renderer,SLOT(updateVideoFrame(const char*,VideoFormat*)),Qt::DirectConnection);
+    connect(this,SIGNAL(updateVideoFrame(VideoFormat*)),
+            renderer,SLOT(updateVideoFrame(VideoFormat*)),Qt::DirectConnection);
+
+    renderer->updateVideoFrame(mPlayer->getRenderData());
     return renderer;
 }

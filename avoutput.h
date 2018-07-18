@@ -66,6 +66,7 @@ public:
     void setSource(QObject *source);
 
     QRect calculateGeometry(int,int);
+
 protected:
     virtual Renderer *createRenderer() const;
 
@@ -77,17 +78,18 @@ signals :
     void backgroundColorChanged();
     void orientationChanged();
 
-    void updateVideoFrame(const char*,VideoFormat*);
+    void updateVideoFrame(VideoFormat*);
 private :
-    AVPlayer *m_player;
+    friend class AVRenderer;
+    AVPlayer *mPlayer;
     FillMode mFillMode;
     Orientation mOrientation;
     QColor mBackgroundColor;
-    VideoFormat format;
-    QTimer m_timer;
-    bool m_isDestroy;
-    int m_fps;
-    int m_reallyFps;
+    VideoFormat mFormat;
+    QTimer mTimer;
+    bool mIsDestroy;
+    int mFps;
+    int mReallyFps;
 };
 
 
@@ -97,7 +99,6 @@ public:
     AVRenderer(AVOutput *output)
         : m_program(NULL)
         , m_renderFbo(NULL)
-        , m_buffer(NULL)
         , m_vbo(NULL)
         , m_vao(NULL)
         , m_output(NULL)
@@ -107,6 +108,7 @@ public:
         , mFps(0)
         , mIsInitPbo(false)
         , mIsNeedNewUpdate(false)
+        , mIsInitTextures(false)
     {
 //        m_format.width = 0;
 //        m_format.height = 0;
@@ -119,7 +121,7 @@ public:
     }
     ~AVRenderer();
 public slots :
-    void updateVideoFrame(const char*,VideoFormat*);
+    void updateVideoFrame(VideoFormat*);
 
     void paint();
     void init();
@@ -144,16 +146,16 @@ private:
     int pboIndex;
 
     VideoFormat m_format;
+    QMutex mDataMutex;
     AVOutput *m_output;
     QRect m_displayRect;
-    unsigned char *m_buffer;
     int mBufferSize;
     /** 数据操作锁 */
-    QMutex mMutex;
     QTime mTime;
     int mLastTime;
     int mFps;
     bool mIsInitPbo;
     bool mIsNeedNewUpdate;
+    bool mIsInitTextures;
 };
 #endif // AVOUTPUT_H

@@ -11,14 +11,6 @@
 #include "AVThread.h"
 
 
-struct VideoFormat{
-    float width;
-    float height;
-    float rotate;
-    int format;
-    QMutex *mutex;
-};
-
 #include "AVMediaCallback.h"
 
 //32k
@@ -42,7 +34,19 @@ extern "C"
     #include <libavutil/opt.h>
 
     #include <libswresample/swresample.h>
+
+    #include <libavutil/hwcontext.h>
 }
+
+struct VideoFormat{
+    float width;
+    float height;
+    float rotate;
+    int format;
+
+    AVFrame *renderFrame;
+    QMutex *renderFrameMutex;
+};
 
 class AVCodec2
 {
@@ -121,11 +125,13 @@ private :
     bool mHasSubtitle;
 
     AVPacket mPacket;
-    AVFrame *mFrame,
+    AVFrame *mFrame, //视频帧缓冲1
+            *mFrame1, //视频帧缓冲2
             *mAudioFrame,
-            *mFrameYUV;
+            *mFrameYUV,
+            *mHWFrame; //硬解BUFFER
+    int mFrameIndex; //使用的
     uint8_t *mYUVBuffer;
-    char *mYUVTransferBuffer;
 
     QString mFilename;
 
@@ -161,8 +167,11 @@ private :
     PacketQueue subtitleq;
 
     VideoFormat vFormat;
-    QMutex m_mutex;
-    bool m_isDestroy;
+    QMutex mRenderFrameMutex;
+    QMutex mRenderFrameMutex2;
+    bool mIsDestroy;
+    int mVideoDecodedCount; //已解码的包的数量
+
 
     QMutex mAudioSwrCtxMutex;
     SwrContext* mAudioSwrCtx; //音频参数转换上下文
@@ -185,6 +194,12 @@ private :
     QAudioFormat mSourceAudioFormat;
     /** 己写入的音频字节数量 */
     qint64 mAlreadyWroteAudioSize;
+
+    /** 是否支持硬解 */
+    bool mIsSupportHw;
+    /** 是否启用硬解 */
+    bool mIsEnableHwDecode;
+
 public :
     /** 任务处理线程 */
     AVThread mProcessThread;
@@ -192,6 +207,11 @@ public :
     AVMediaCallback *mCallback;
 
     QMutex mMutex;
+
+    /** 硬解上下文 */
+    AVBufferRef *mHWDeviceCtx;
+    /** 硬解格式 */
+    enum AVPixelFormat mHWPixFormat;
 };
 
 class AVCodecTask : public Task{

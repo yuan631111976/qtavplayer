@@ -11,7 +11,7 @@ public :
     AVMediaCallback(){}
     virtual ~AVMediaCallback(){}
     /** 更新视频帧回调 */
-    virtual void mediaUpdateVideoFrame(const char*,void*){}
+    virtual void mediaUpdateVideoFrame(void*){}
     /** 更新音频格式回调 */
     virtual void mediaUpdateAudioFormat(const QAudioFormat&){}
     /** 更新音频数据格式 */

@@ -17,6 +17,33 @@ int64_t seekPacket(void *opaque, int64_t offset, int whence){
     return 0;
 }
 
+static int hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type)
+{
+    AVCodec2 *opaque = (AVCodec2 *) ctx->opaque;
+    int err = 0;
+
+    if ((err = av_hwdevice_ctx_create(&opaque->mHWDeviceCtx, type,
+                                      NULL, NULL, 0)) < 0) {
+        qDebug() << "Failed to create specified HW device.\n";
+        return err;
+    }
+    ctx->hw_device_ctx = av_buffer_ref(opaque->mHWDeviceCtx);
+    return err;
+}
+
+static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,
+                                        const enum AVPixelFormat *pix_fmts)
+{
+    AVCodec2 *opaque = (AVCodec2 *) ctx->opaque;
+    const enum AVPixelFormat *p;
+    for (p = pix_fmts; *p != -1; p++) {
+        if (*p == opaque->mHWPixFormat)
+            return *p;
+    }
+    qDebug() << "Failed to get HW surface format.\n";
+    return AV_PIX_FMT_NONE;
+}
+
 AVCodec2::AVCodec2()
     : mAudioIndex(-1)
     , mVideoIndex(-1)
@@ -32,7 +59,7 @@ AVCodec2::AVCodec2()
     , mIsReadFinish(false)
     , mMediaBufferMode(AVDefine::MediaBufferMode_Time)
     , mBufferSize(5000)
-    , m_isDestroy(false)
+    , mIsDestroy(false)
     , mAudioSwrCtx(NULL)
     , mIsVideoBuffered(false)
     , mIsAudioBuffered(false)
@@ -40,7 +67,6 @@ AVCodec2::AVCodec2()
     , mStatus(AVDefine::MediaStatus_UnknownStatus)
     , mAudioDstData(NULL)
     , mVideoSwsCtx(NULL)
-    , mYUVTransferBuffer(NULL)
     , mIsSeek(false)
     , mSeekTime(-1)
     , mIsSeekd(true)
@@ -61,6 +87,11 @@ AVCodec2::AVCodec2()
     , mFrameYUV(NULL)
     , mYUVBuffer(NULL)
     , mIsInit(false)
+    , mIsSupportHw(false)
+    , mHWDeviceCtx(NULL)
+    , mIsEnableHwDecode(false)
+    , mFrameIndex(0)
+    , mVideoDecodedCount(0)
 {
 //    avcodec_register_all();
 //    avfilter_register_all();
@@ -82,7 +113,7 @@ AVCodec2::AVCodec2()
 }
 
 AVCodec2::~AVCodec2(){
-    m_isDestroy = true;
+    mIsDestroy = true;
     mProcessThread.stop();
     release();
 }
@@ -119,6 +150,26 @@ void AVCodec2::init(){
             statusChanged(AVDefine::MediaStatus_InvalidMedia);
         }else{
             avcodec_parameters_to_context(mVideoCodecCtx, mFormatCtx->streams[mVideoIndex]->codecpar);
+
+            mVideoCodecCtx->thread_count = 0;
+            if(mIsEnableHwDecode){
+                for (int i = 0;; i++) {
+                    const AVCodecHWConfig *config = avcodec_get_hw_config(mVideoCodec, i);
+                    if (!config) {
+                        qDebug() << "------------------------ hw : 不支持硬解";
+                        break;
+                    }
+                    if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type != AV_HWDEVICE_TYPE_NONE) {
+                        qDebug() << "------------------------ support hw";
+                        mIsSupportHw = true;
+                        mVideoCodecCtx->opaque = (void *) this;
+                        mHWPixFormat = config->pix_fmt;
+                        mVideoCodecCtx->get_format = get_hw_format;
+                        hw_decoder_init(mVideoCodecCtx, config->device_type);
+                        break;
+                    }
+                }
+            }
 
             mIsOpenVideoCodec = true;
             if(avcodec_open2(mVideoCodecCtx, mVideoCodec, NULL) < 0)
@@ -176,6 +227,7 @@ void AVCodec2::init(){
 
     if(mIsOpenVideoCodec){
         mFrame = av_frame_alloc();
+        mFrame1 = av_frame_alloc();
         AVDictionaryEntry *tag = NULL;
         tag = av_dict_get(mFormatCtx->streams[mVideoIndex]->metadata, "rotate", tag, 0);
         if(tag != NULL)
@@ -186,10 +238,6 @@ void AVCodec2::init(){
         vFormat.height = mVideoCodecCtx->height;
         vFormat.rotate = mRotate;
         vFormat.format = AV_PIX_FMT_YUV420P;
-        vFormat.mutex = &m_mutex;
-
-        int numBytes = av_image_get_buffer_size( AV_PIX_FMT_YUV420P, mVideoCodecCtx->width,mVideoCodecCtx->height, 1  );
-        mYUVTransferBuffer = new char[numBytes];
 
         switch (mVideoCodecCtx->pix_fmt) {
         case AV_PIX_FMT_YUV420P :
@@ -200,6 +248,7 @@ void AVCodec2::init(){
 
 //            avio_alloc_context
         default: //AV_PIX_FMT_YUV420P
+            int numBytes = av_image_get_buffer_size( AV_PIX_FMT_YUV420P, mVideoCodecCtx->width,mVideoCodecCtx->height, 1  );
             mVideoSwsCtx = sws_getContext(
                 mVideoCodecCtx->width,
                 mVideoCodecCtx->height,
@@ -209,6 +258,7 @@ void AVCodec2::init(){
                 AV_PIX_FMT_YUV420P,
                 SWS_BICUBIC,NULL,NULL,NULL);
             mFrameYUV = av_frame_alloc();
+
 
             mYUVBuffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
             int buffSize = av_image_fill_arrays( mFrameYUV->data, mFrameYUV->linesize, mYUVBuffer, AV_PIX_FMT_YUV420P,mVideoCodecCtx->width,mVideoCodecCtx->height, 1 );
@@ -311,6 +361,11 @@ void AVCodec2::release(){
         mFrame = NULL;
     }
 
+    if(mFrame1 != NULL){
+        av_frame_free(&mFrame1);
+        mFrame1 = NULL;
+    }
+
     if(mAudioFrame != NULL){
         av_frame_free(&mAudioFrame);
         mAudioFrame = NULL;
@@ -325,7 +380,7 @@ void AVCodec2::release(){
     mIsOpenVideoCodec = false;
     mRotate = 0;
     mIsReadFinish = false;
-    m_isDestroy = false;
+    mIsDestroy = false;
 
     mAudioSwrCtxMutex.lock();
     if(mAudioSwrCtx != NULL){
@@ -349,11 +404,6 @@ void AVCodec2::release(){
     if(mVideoSwsCtx != NULL){
         sws_freeContext(mVideoSwsCtx);
         mVideoSwsCtx = NULL;
-    }
-
-    if(mYUVTransferBuffer != NULL){
-        delete mYUVTransferBuffer;
-        mYUVTransferBuffer = NULL;
     }
 
     if(mYUVBuffer != NULL){
@@ -401,7 +451,7 @@ void AVCodec2::decodec(){
         return;
     }
 
-    if(m_isDestroy || mIsReadFinish)
+    if(mIsDestroy || mIsReadFinish)
         return;
 
     if(mIsSeek){
@@ -466,13 +516,17 @@ void AVCodec2::decodec(){
                 mIsVideoPlayed = false;
             }
         }
-
-        if(pkt.pts == 0)
-        {
+        if(++mVideoDecodedCount == 10 || (mVideoDecodedCount == 0 && pkt.flags == AV_PKT_FLAG_KEY)){
             if(mCallback){
                 mCallback->mediaCanRenderFirstFrame();
             }
         }
+//        if(pkt.pts == 0)
+//        {
+//            if(mCallback){
+//                mCallback->mediaCanRenderFirstFrame();
+//            }
+//        }
     }else if(pkt.stream_index == mAudioIndex){
         if(!mIsSeekd){
             qint64 audioTime = av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * pkt.pts * 1000;
@@ -725,7 +779,7 @@ void AVCodec2::slotRenderNextFrame(){
         statusChanged(AVDefine::MediaStatus_InvalidMedia);
         return;
     }
-    if(m_isDestroy || mIsVideoPlayed)
+    if(mIsDestroy || mIsVideoPlayed)
         return;
 
     mVideoDecodecMutex.lock();
@@ -740,42 +794,62 @@ void AVCodec2::slotRenderNextFrame(){
             mVideoDecodecMutex.unlock();
             return;
         }
-        while(avcodec_receive_frame(mVideoCodecCtx, mFrame) == 0){
-            m_mutex.lock();
-            AVFrame *frame = mFrame;
-            if(mVideoSwsCtx != NULL){
-                ret = sws_scale(mVideoSwsCtx,
-                          mFrame->data,
-                          mFrame->linesize,
-                          0,
-                          mFrame->height,
-                          mFrameYUV->data,
-                          mFrameYUV->linesize);
-                frame = mFrameYUV;
+
+        AVFrame *receiveFrame = mFrameIndex % 2 == 0 ? mFrame : mFrame1;
+        vFormat.renderFrameMutex = mFrameIndex % 2 == 0 ? &mRenderFrameMutex : &mRenderFrameMutex2;
+
+        vFormat.renderFrameMutex->lock();
+        while(avcodec_receive_frame(mVideoCodecCtx, receiveFrame) == 0){
+//            AVFrame *frame = receiveFrame;
+            vFormat.renderFrame = receiveFrame;
+            mHWFrame = NULL;
+            if (receiveFrame->format == mHWPixFormat && mIsSupportHw) {
+                qDebug() << "----------------------------- 硬解。。。";
+                mHWFrame = av_frame_alloc();
+                /* retrieve data from GPU to CPU */
+                if ((ret = av_hwframe_transfer_data(mHWFrame, mFrame, 0)) < 0) {
+                    qDebug() << "Error transferring the data to system memory";
+                }
+//                frame = mHWFrame;
             }
 
-            int width = mFrame->width;
-            int height = mFrame->height;
-            memset(mYUVTransferBuffer,0,width*height*3/2);
-            int i,a;
-            for (i = 0,a = 0; i<height; i++){
-                memcpy(mYUVTransferBuffer + a,(const char *)(frame->data[0] + i * frame->linesize[0]),width);
-                a += width;
+//            av_hwframe_transfer_data
+//            av_hwframe_map()
+//            AV_HWFRAME_MAP_DIRECT
+
+            if(mVideoSwsCtx != NULL){
+                ret = sws_scale(mVideoSwsCtx,
+                          receiveFrame->data,
+                          receiveFrame->linesize,
+                          0,
+                          receiveFrame->height,
+                          mFrameYUV->data,
+                          mFrameYUV->linesize);
+                av_frame_copy(receiveFrame,mFrameYUV);
+                av_frame_unref(mFrameYUV);
             }
-            for (i = 0; i<height / 2; i++){
-                memcpy(mYUVTransferBuffer + a,(const char *)(frame->data[1] + i * frame->linesize[1]),width / 2);
-                a += width / 2;
+
+            if(mHWFrame != NULL){
+                av_frame_unref(mHWFrame);
             }
-            for (i = 0; i<height / 2; i++){
-                memcpy(mYUVTransferBuffer + a,(const char *)(frame->data[2] + i * frame->linesize[2]),width / 2);
-                a += width / 2;
-            }
-            av_frame_unref(mFrame);
-            m_mutex.unlock();
+
             if(mCallback){
-                mCallback->mediaUpdateVideoFrame(mYUVTransferBuffer,(void *)&vFormat);
+                if(mHWFrame == NULL){
+                    mCallback->mediaUpdateVideoFrame((void *)&vFormat);
+                }
             }
+
+            vFormat.renderFrameMutex->unlock();
+
+            ++mFrameIndex;
+            receiveFrame = mFrameIndex % 2 == 0 ? mFrame : mFrame1;
+            vFormat.renderFrameMutex = mFrameIndex % 2 == 0 ? &mRenderFrameMutex : &mRenderFrameMutex2;
+            av_frame_unref(receiveFrame);
+
+            vFormat.renderFrameMutex->lock();
         }
+        vFormat.renderFrameMutex->unlock();
+
         mVideoCodecCtxMutex.unlock();
     }else{
         if(!mIsReadFinish){
@@ -802,7 +876,7 @@ void AVCodec2::slotRequestAudioNextFrame(int len){
         return;
     }
 
-    if(m_isDestroy || mIsAudioPlayed)
+    if(mIsDestroy || mIsAudioPlayed)
         return;
 
     mAudioBufferMutex.lock();

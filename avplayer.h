@@ -66,6 +66,8 @@ public:
     int getMediaBufferMode() const;
     void setMediaBufferMode(int mode);
 
+    VideoFormat *getRenderData();
+
     //QQmlParserStatus
     virtual void classBegin();
     virtual void componentComplete();
@@ -82,7 +84,7 @@ public :
 public :
     void mediaUpdateAudioFormat(const QAudioFormat&);
     void mediaUpdateAudioFrame(const QByteArray &);
-    void mediaUpdateVideoFrame(const char*,void*);
+    void mediaUpdateVideoFrame(void*);
     void mediaDurationChanged(int);
     void mediaStatusChanged(AVDefine::MediaStatus);
     void mediaHasAudioChanged();
@@ -101,7 +103,7 @@ signals :
     void volumeChanged();
     void playRateChanged();
     void playStatusChanged();
-    void updateVideoFrame(const char*,VideoFormat*);
+    void updateVideoFrame(VideoFormat*);
 
 public :
     void requestRender();
@@ -175,11 +177,13 @@ private:
     QMutex mAudioBufferMutex;
 
     int mLastTime;
-    bool m_isDestroy;
+    bool mIsDestroy;
     bool mIsPaused;
     bool mIsPlaying;
     bool mIsSetPlayRate;
     bool mIsSetPlayRateBeforeIsPaused;
+    bool mIsDecoded;
+    bool mIsClickedPlay;
     QMutex mStatusMutex;
 
     QWaitCondition mCondition;
@@ -188,6 +192,7 @@ private:
     AVPlayerCallback *mPlayerCallback;
     /** 播放状态 */
     AVDefine::PlaybackState mPlaybackState;
+    VideoFormat *mRenderData;
 };
 
 class AVPlayerTask : public Task{
@@ -201,7 +206,7 @@ public :
     AVPlayerTask(AVPlayer *player,AVPlayerTaskCommand command,double param = 0):
         mPlayer(player),command(command),param(param){this->type = (int)command;}
 protected :
-    /** 现程实现 */
+    /** 线程实现 */
     virtual void run();
 private :
     AVPlayer *mPlayer;
