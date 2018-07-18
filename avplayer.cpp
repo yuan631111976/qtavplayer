@@ -523,8 +523,8 @@ void AVPlayer::mediaStatusChanged(AVDefine::MediaStatus status){
             if(mPlayerCallback != NULL){
                 mPlayerCallback->positionChanged(duration());
             }
-
             emit positionChanged();
+            emit playCompleted();
             break;
         }
 

@@ -104,6 +104,7 @@ signals :
     void playRateChanged();
     void playStatusChanged();
     void updateVideoFrame(VideoFormat*);
+    void playCompleted(); //播放完成
 
 public :
     void requestRender();
