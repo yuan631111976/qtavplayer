@@ -31,6 +31,6 @@ private :
 private :
     list<Task *> mFuns;
     QMutex mMutex;
-    bool isRunning;
+    bool mIsRunning;
 };
 #endif // AVTHREAD_H

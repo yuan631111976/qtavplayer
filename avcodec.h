@@ -36,6 +36,12 @@ extern "C"
     #include <libswresample/swresample.h>
 
     #include <libavutil/hwcontext.h>
+
+    #ifdef LIBAVUTIL_VERSION_MAJOR
+    #if (LIBAVUTIL_VERSION_MAJOR >= 56)
+    #define ENABLE_HW
+    #endif
+    #endif
 }
 
 struct VideoFormat{
@@ -94,7 +100,7 @@ public:
     void slotSetPlayRate(float);
 public:
     void init();
-    void release();
+    void release(bool isDeleted = false);
     void decodec();
 private:
     void packet_queue_init(PacketQueue *q);

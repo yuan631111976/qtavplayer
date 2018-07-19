@@ -1,6 +1,6 @@
 #include "AVThread.h"
 AVThread::AVThread()
-    : isRunning(true)
+    : mIsRunning(true)
 {
     start();
 }
@@ -28,7 +28,7 @@ AVThread::~AVThread()
 }
 
 void AVThread::stop(){
-    isRunning = false;
+    mIsRunning = false;
 }
 
 void AVThread::clearAllTask(int type){
@@ -96,7 +96,7 @@ Task *AVThread::getTask(){
 
 void AVThread::run(){
     int i = 0;
-    while(isRunning){
+    while(mIsRunning){
         Task * task = getTask();
         if(task == NULL){
             QThread::msleep(1);

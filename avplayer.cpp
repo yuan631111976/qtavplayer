@@ -42,12 +42,21 @@ AVPlayer::AVPlayer()
 AVPlayer::~AVPlayer(){
     mAudioTimer->stop();
     delete mAudioTimer;
-
     mIsDestroy = true;
+
     mCondition.wakeAll();
 
     mThread.stop();
+    int i = 0;
+    while(!mThread.isRunning() && i++ < 200){
+        QThread::msleep(1);
+    }
+
     mThread2.stop();
+    i = 0;
+    while(!mThread2.isRunning() && i++ < 200){
+        QThread::msleep(1);
+    }
 
     if(mCodec != NULL){
         delete mCodec;
@@ -57,6 +66,7 @@ AVPlayer::~AVPlayer(){
     mAudio = NULL;
 
     mAudioBufferMutex.lock();
+
     if(mAudioBuffer != NULL){
         mAudioBuffer->close();
         delete mAudioBuffer;

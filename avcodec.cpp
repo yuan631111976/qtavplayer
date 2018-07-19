@@ -93,11 +93,15 @@ AVCodec2::AVCodec2()
     , mFrameIndex(0)
     , mVideoDecodedCount(0)
 {
-//    avcodec_register_all();
-//    avfilter_register_all();
-//    av_register_all();
-//    avformat_network_init();
+#ifdef LIBAVUTIL_VERSION_MAJOR
+#if (LIBAVUTIL_VERSION_MAJOR < 56)
+    avcodec_register_all();
+    avfilter_register_all();
+    av_register_all();
+    avformat_network_init();
 //    av_log_set_callback(NULL);//不打印日志
+#endif
+#endif
 
 
     audioq.isInit = false;
@@ -115,7 +119,11 @@ AVCodec2::AVCodec2()
 AVCodec2::~AVCodec2(){
     mIsDestroy = true;
     mProcessThread.stop();
-    release();
+    int i = 0;
+    while(!mProcessThread.isRunning() && i++ < 200){
+        QThread::msleep(1);
+    }
+    release(true);
 }
 
 
@@ -152,6 +160,7 @@ void AVCodec2::init(){
             avcodec_parameters_to_context(mVideoCodecCtx, mFormatCtx->streams[mVideoIndex]->codecpar);
 
             mVideoCodecCtx->thread_count = 0;
+#ifdef ENABLE_HW
             if(mIsEnableHwDecode){
                 for (int i = 0;; i++) {
                     const AVCodecHWConfig *config = avcodec_get_hw_config(mVideoCodec, i);
@@ -170,6 +179,7 @@ void AVCodec2::init(){
                     }
                 }
             }
+#endif
 
             mIsOpenVideoCodec = true;
             if(avcodec_open2(mVideoCodecCtx, mVideoCodec, NULL) < 0)
@@ -327,7 +337,7 @@ void AVCodec2::init(){
     decodec();
 }
 
-void AVCodec2::release(){
+void AVCodec2::release(bool isDeleted){
     if(mFormatCtx != NULL){
         avformat_close_input(&mFormatCtx);
         avformat_free_context(mFormatCtx);
@@ -380,7 +390,10 @@ void AVCodec2::release(){
     mIsOpenVideoCodec = false;
     mRotate = 0;
     mIsReadFinish = false;
-    mIsDestroy = false;
+
+    if(!isDeleted){
+        mIsDestroy = false;
+    }
 
     mAudioSwrCtxMutex.lock();
     if(mAudioSwrCtx != NULL){
@@ -469,6 +482,7 @@ void AVCodec2::decodec(){
     int ret = av_read_frame(mFormatCtx, &pkt);
     mIsReadFinish = ret < 0;
     if(mIsReadFinish){
+        qDebug() << "--------------------- decoded completed";
         if(!mIsSeekd){
             mIsSeekd = true;
             if(mCallback){
@@ -511,10 +525,11 @@ void AVCodec2::decodec(){
                 mIsVideoPlayed = false;
             }
         }else{
-            if(pkt.pts >= 0){
+//            qDebug() << "--------------------------------- : " << pkt.pts << ":" << pkt.dts;
+//            if(pkt.pts >= 0){
                 packet_queue_put(&videoq, &pkt);
                 mIsVideoPlayed = false;
-            }
+//            }
         }
         if(++mVideoDecodedCount == 10 || (mVideoDecodedCount == 0 && pkt.flags == AV_PKT_FLAG_KEY)){
             if(mCallback){
@@ -803,6 +818,7 @@ void AVCodec2::slotRenderNextFrame(){
 //            AVFrame *frame = receiveFrame;
             vFormat.renderFrame = receiveFrame;
             mHWFrame = NULL;
+            #ifdef ENABLE_HW
             if (receiveFrame->format == mHWPixFormat && mIsSupportHw) {
                 qDebug() << "----------------------------- 硬解。。。";
                 mHWFrame = av_frame_alloc();
@@ -812,6 +828,7 @@ void AVCodec2::slotRenderNextFrame(){
                 }
 //                frame = mHWFrame;
             }
+            #endif
 
 //            av_hwframe_transfer_data
 //            av_hwframe_map()
@@ -931,10 +948,6 @@ void AVCodec2::slotRequestAudioNextFrame(int len){
             else{
                 mIsAudioPlayed = true;
             }
-
-            if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed){
-                emit statusChanged(AVDefine::MediaStatus_Played);
-            }
         }
         if(isPacket)
             av_packet_unref(&pkt);
@@ -946,6 +959,10 @@ void AVCodec2::slotRequestAudioNextFrame(int len){
         if(mCallback){
             mCallback->mediaUpdateAudioFrame(r);
         }
+    }
+
+    if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed){
+        emit statusChanged(AVDefine::MediaStatus_Played);
     }
 }
 
