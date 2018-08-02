@@ -1,19 +1,19 @@
 HEADERS += \
-    $$PWD/AVCodec.h \
     $$PWD/AVDefine.h \
     $$PWD/AVMediaCallback.h \
     $$PWD/AVMediaPlayer.h \
     $$PWD/AVOutput.h \
     $$PWD/AVPlayer.h \
     $$PWD/AVPlayerCallback.h \
-    $$PWD/AVThread.h
+    $$PWD/AVThread.h \
+    $$PWD/AVDecoder.h
 
 SOURCES += \
-    $$PWD/AVCodec.cpp \
     $$PWD/AVMediaPlayer.cpp \
     $$PWD/AVOutput.cpp \
     $$PWD/AVPlayer.cpp \
-    $$PWD/AVThread.cpp
+    $$PWD/AVThread.cpp \
+    $$PWD/AVDecoder.cpp
 
 RESOURCES += \
     $$PWD/qtavplayer.qrc

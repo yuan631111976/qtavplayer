@@ -73,6 +73,7 @@ QOpenGLFramebufferObject *AVRenderer::createFramebufferObject(const QSize &size)
 void AVRenderer::updateVideoFrame(VideoFormat *format){
     if(format == NULL)
         return;
+
     if(m_format.width != format->width || m_format.height != format->height){
         m_format.format = format->format;
         m_format.width = format->width;
@@ -95,6 +96,14 @@ void AVRenderer::init(){
         m_program = new QOpenGLShaderProgram;
         switch (m_format.format) {
         case AV_PIX_FMT_YUV420P:
+        case AV_PIX_FMT_YUVJ420P:
+            mRenderFormet = YUV420P;
+            m_program->addShaderFromSourceFile(QOpenGLShader::Vertex,":/yuv420.vert");
+            m_program->addShaderFromSourceFile(QOpenGLShader::Fragment,":/yuv420.frag");
+            break;
+        case AV_PIX_FMT_YUVJ444P:
+        case AV_PIX_FMT_YUV444P:
+            mRenderFormet = YUV444P;
             m_program->addShaderFromSourceFile(QOpenGLShader::Vertex,":/yuv420.vert");
             m_program->addShaderFromSourceFile(QOpenGLShader::Fragment,":/yuv420.frag");
             break;
@@ -119,7 +128,7 @@ void AVRenderer::init(){
         for(int i = 0; i < TEXTURE_NUMBER; i++)
         {
             glBindTexture(GL_TEXTURE_2D, textureId[i]);
-            if(i == 0){
+            if(i == 0 || mRenderFormet == YUV444P){
                 glTexImage2D ( GL_TEXTURE_2D, 0, GL_LUMINANCE, m_format.width,m_format.height, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
             }else{
                 glTexImage2D ( GL_TEXTURE_2D, 0, GL_LUMINANCE, m_format.width / 2,m_format.height / 2, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
@@ -231,7 +240,8 @@ void AVRenderer::paint(){
 
         int linesize = m_format.renderFrame->linesize[j];
         uint8_t * data = m_format.renderFrame->data[j];
-        if(j == 0){//y
+
+        if(j == 0 || mRenderFormet == YUV444P){//y
             if(m_pbo[pboIndex][j].size() != textureSize)
                 m_pbo[pboIndex][j].allocate(textureSize);
 
@@ -269,7 +279,7 @@ void AVRenderer::paint(){
 
     for(int j = 0;j < TEXTURE_NUMBER;j++){
         m_pbo[nextPboIndex][j].bind();
-        if(j == 0){
+        if(j == 0 || mRenderFormet == YUV444P){
             glBindTexture(GL_TEXTURE_2D, textureId[j]);
             glTexSubImage2D(GL_TEXTURE_2D,0,0,0, m_format.width,m_format.height, GL_LUMINANCE, GL_UNSIGNED_BYTE, NULL);
         }else{

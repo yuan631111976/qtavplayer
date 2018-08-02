@@ -54,11 +54,11 @@ struct VideoFormat{
     QMutex *renderFrameMutex;
 };
 
-class AVCodec2
+class AVDecoder
 {
 public:
-    AVCodec2();
-    ~AVCodec2();
+    AVDecoder();
+    ~AVDecoder();
 
     typedef struct PacketQueue {
         AVPacketList *first_pkt, *last_pkt;
@@ -90,6 +90,8 @@ public:
     void renderNextFrame();
     /** 请求向音频buffer添加数据  */
     void requestAudioNextFrame(int);
+    /** video是否播放完成 */
+    bool isVideoPlayed();
 public:
     void slotSeek(int ms);
     void slotSetBufferSize(int size);
@@ -143,6 +145,8 @@ private :
 
     int mFrameFinished;
     bool mIsReadFinish;
+    bool mIsVideoLoadedCompleted; //视频是否加载完成
+    bool mIsAudioLoadedCompleted; //音频是否加载完成
     bool mIsSeek; //是否进行了拖动处理
     bool mIsSeekd; //当所有元素拖动完成后，些属性为true
     bool mIsAudioSeeked; // 音频是否拖动完成
@@ -231,13 +235,13 @@ public :
         AVCodecTaskCommand_SetMediaBufferMode,
         AVCodecTaskCommand_Decodec
     };
-    AVCodecTask(AVCodec2 *codec,AVCodecTaskCommand command,double param = 0):
+    AVCodecTask(AVDecoder *codec,AVCodecTaskCommand command,double param = 0):
         mCodec(codec),command(command),param(param){}
 protected :
     /** 现程实现 */
     virtual void run();
 private :
-    AVCodec2 *mCodec;
+    AVDecoder *mCodec;
     AVCodecTaskCommand command;
     double param;
 };

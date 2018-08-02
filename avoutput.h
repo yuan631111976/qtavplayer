@@ -96,6 +96,20 @@ private :
 class AVRenderer : public QObject , protected QOpenGLFunctions , public QQuickFramebufferObject::Renderer{
     Q_OBJECT
 public:
+    enum RenderFormat{
+        UNKONW = -1 ,
+        YUV410P ,
+        YUV411P ,
+        YUV420P ,
+        YUV422P ,
+        YUV444P ,
+
+        YUV410 ,
+        YUV411 ,
+        YUV420 ,
+        YUV422 ,
+        YUV444 ,
+    };
     AVRenderer(AVOutput *output)
         : m_program(NULL)
         , m_renderFbo(NULL)
@@ -109,6 +123,7 @@ public:
         , mIsInitPbo(false)
         , mIsNeedNewUpdate(false)
         , mIsInitTextures(false)
+        , mRenderFormet(AVRenderer::UNKONW)
     {
 //        m_format.width = 0;
 //        m_format.height = 0;
@@ -157,5 +172,6 @@ private:
     bool mIsInitPbo;
     bool mIsNeedNewUpdate;
     bool mIsInitTextures;
+    RenderFormat mRenderFormet;
 };
 #endif // AVOUTPUT_H

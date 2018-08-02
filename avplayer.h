@@ -6,7 +6,7 @@
 #include <QAudioOutput>
 #include <QBuffer>
 #include "AVMediaPlayer.h"
-#include "AVCodec.h"
+#include "AVDecoder.h"
 #include "AVDefine.h"
 #include "AVThread.h"
 #include "AVMediaCallback.h"
@@ -108,7 +108,7 @@ signals :
 
 public :
     void requestRender();
-    void requestAudioData();
+    void requestAudioData(bool isNeedLock = false);
 private :
     void wakeupPlayer();
 
@@ -145,7 +145,7 @@ public slots:
     /** 设置播放回调接口 */
     void setPlayerCallback(AVPlayerCallback *);
 private:
-    AVCodec2 *mCodec;
+    AVDecoder *mDecoder;
     AVDefine::MediaStatus mStatus;
     AVDefine::SynchMode mSynchMode;
 
@@ -231,7 +231,7 @@ public :
     virtual void run(){
         while(mIsRunning){
             if(mPlayer != NULL)
-                mPlayer->requestAudioData();
+                mPlayer->requestAudioData(true);
             mMutex.lock();
             mCondition.wait(&mMutex,20);
             mMutex.unlock();
@@ -239,8 +239,10 @@ public :
     }
 
     void begin(){
-        mIsRunning = true;
-        start();
+        if(mPlayer != NULL && mPlayer->hasAudio()){
+            mIsRunning = true;
+            start();
+        }
     }
 
     void stop(){
