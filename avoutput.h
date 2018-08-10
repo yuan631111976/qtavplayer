@@ -66,7 +66,8 @@ public:
     void setSource(QObject *source);
 
     QRect calculateGeometry(int,int);
-
+public slots:
+    void playStatusChanged();
 protected:
     virtual Renderer *createRenderer() const;
 
@@ -109,7 +110,17 @@ public:
         YUV420 ,
         YUV422 ,
         YUV444 ,
+
+        GRAY8 ,
     };
+
+    enum TextureFormat{
+        YUV,
+        YUVJ,
+        RGB ,
+        GRAY ,
+    };
+
     AVRenderer(AVOutput *output)
         : m_program(NULL)
         , m_renderFbo(NULL)
@@ -124,6 +135,7 @@ public:
         , mIsNeedNewUpdate(false)
         , mIsInitTextures(false)
         , mRenderFormet(AVRenderer::UNKONW)
+        , mForceUpdate(true)
     {
 //        m_format.width = 0;
 //        m_format.height = 0;
@@ -151,6 +163,8 @@ private:
     QOpenGLBuffer *m_ibo;
     QOpenGLFramebufferObject *m_renderFbo;
     QOpenGLShaderProgram *m_program;
+    QSize yuvSize[TEXTURE_NUMBER];
+    qint64 yuvBufferSize[TEXTURE_NUMBER];
     GLuint textureId[TEXTURE_NUMBER];
 
 
@@ -158,14 +172,17 @@ private:
     int mVertexInLocaltion;
     int mTextureInLocaltion;
     int textureLocaltion[TEXTURE_NUMBER];
+    int mAlpha;
+    int mTextureFormat;
+    int mTextureFormatValue;
+    int mTextureOffset;
     int pboIndex;
 
     VideoFormat m_format;
     QMutex mDataMutex;
     AVOutput *m_output;
     QRect m_displayRect;
-    int mBufferSize;
-    /** 数据操作锁 */
+
     QTime mTime;
     int mLastTime;
     int mFps;
@@ -173,5 +190,6 @@ private:
     bool mIsNeedNewUpdate;
     bool mIsInitTextures;
     RenderFormat mRenderFormet;
+    bool mForceUpdate; //强制更新
 };
 #endif // AVOUTPUT_H

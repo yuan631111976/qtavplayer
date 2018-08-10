@@ -49,6 +49,7 @@ struct VideoFormat{
     float height;
     float rotate;
     int format;
+    int linesize[3];
 
     AVFrame *renderFrame;
     QMutex *renderFrameMutex;
@@ -104,6 +105,7 @@ public:
     void init();
     void release(bool isDeleted = false);
     void decodec();
+    void setFilenameImpl(const QString &source);
 private:
     void packet_queue_init(PacketQueue *q);
     int packet_queue_put(PacketQueue *q, AVPacket *pkt);
@@ -233,10 +235,11 @@ public :
         AVCodecTaskCommand_Seek,
         AVCodecTaskCommand_SetBufferSize,
         AVCodecTaskCommand_SetMediaBufferMode,
-        AVCodecTaskCommand_Decodec
+        AVCodecTaskCommand_Decodec ,
+        AVCodecTaskCommand_SetFileName
     };
-    AVCodecTask(AVDecoder *codec,AVCodecTaskCommand command,double param = 0):
-        mCodec(codec),command(command),param(param){}
+    AVCodecTask(AVDecoder *codec,AVCodecTaskCommand command,double param = 0,QString param2 = ""):
+        mCodec(codec),command(command),param(param),param2(param2){}
 protected :
     /** 现程实现 */
     virtual void run();
@@ -244,6 +247,7 @@ private :
     AVDecoder *mCodec;
     AVCodecTaskCommand command;
     double param;
+    QString param2;
 };
 
 #endif // AVCODEC_H

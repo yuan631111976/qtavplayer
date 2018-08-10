@@ -1,8 +1,7 @@
 <RCC>
     <qresource prefix="/">
-        <file>yuv420.frag</file>
-        <file>yuv420.vert</file>
-        <file>brg.frag</file>
-        <file>brg.vert</file>
+        <file>video.vert</file>
+        <file>yuv-packed.frag</file>
+        <file>yuv-planar.frag</file>
     </qresource>
 </RCC>

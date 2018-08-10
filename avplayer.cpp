@@ -30,7 +30,7 @@ AVPlayer::AVPlayer()
     , mIsAudioWaiting(NULL)
     , mIsDecoded(false)
     , mRenderData(NULL)
-    , mIsClickedPlay(true)
+    , mIsClickedPlay(false)
 {
     mDecoder = new AVDecoder;
     mDecoder->setMediaCallback(this);
@@ -83,8 +83,6 @@ void AVPlayer::componentComplete(){
     if (!mSource.isEmpty() && (mAutoLoad || mAutoPlay)) {
         if (mAutoLoad)
             mDecoder->load();
-//        if (mAutoPlay)
-//            mCodec->play();
     }
     mComplete = true;
 }
@@ -127,13 +125,12 @@ void AVPlayer::pause(){
     if(getIsPaused() || !getIsPlaying())
         return;
     setIsPaused(true);
-//    mIsPaused = true;
+
+    mThread.clearAllTask(AVPlayerTask::AVPlayerTaskCommand_Render); //清除渲染任务
+
     mAudioTimer->stop();
     mAudioMutex.lock();
     if(mAudio && mAudio->state() == QAudio::ActiveState){
-//        mAudioBufferMutex.lock();
-//        mAudioBuffer = NULL;
-//        mAudioBufferMutex.unlock();
         mAudio->suspend();
     }
     mAudioMutex.unlock();
@@ -148,8 +145,6 @@ void AVPlayer::stop(){
     if(!getIsPlaying())
         return;
     mSeekTime = 0;
-//    mIsPaused = true;
-//    mIsPlaying = false;
     setIsPaused(true);
     setIsPlaying(false);
     mAudioTimer->stop();
@@ -257,6 +252,7 @@ void AVPlayer::setSource(const QString &source){
          mSource = source;
     }
 
+    stop();
     mAudioMutex.lock();
     if(mAudio != NULL){
         delete mAudio;
@@ -479,24 +475,20 @@ void AVPlayer::requestRender(){
         currentTime += mSeekTime;
     int sleepTime = nextTime - currentTime < 0 ? 0 : nextTime - currentTime;
 //    qDebug() << "------------------ sleepTime : " << sleepTime << ":" << mAudio->processedUSecs() / 1000 << ":" << nextTime;
-    if(currentTime - nextTime >= 1000 && !mIsAudioWaiting){ //某些视频解码太耗时，误差太大的话，先将音频暂停，在继续播放
-        mAudioBufferMutex.lock();
-        mAudioBuffer = NULL;
-        mAudioBufferMutex.unlock();
+    if(currentTime - nextTime >= 1000 && !mIsAudioWaiting){ //某些视频解码太耗时，误差太大的话，先将音频暂停，再继续播放
         mAudioMutex.lock();
         if(mAudio)
             mAudio->suspend();
         mAudioMutex.unlock();
         mIsAudioWaiting = true;
+        mAudioTimer->stop();
     }else if(mIsAudioWaiting && currentTime - nextTime < 1000){
-        mAudioBufferMutex.lock();
-        mAudioBuffer = NULL;
-        mAudioBufferMutex.unlock();
         mAudioMutex.lock();
         if(mAudio)
             mAudio->resume();
         mAudioMutex.unlock();
         mIsAudioWaiting = false;
+        mAudioTimer->begin();
     }
 
     if(sleepTime > 0){
@@ -531,7 +523,7 @@ void AVPlayer::mediaStatusChanged(AVDefine::MediaStatus status){
             break;
         }
         case AVDefine::MediaStatus_Buffered :{
-//            //qDebug() <<"buffered played";
+//            qDebug() <<"buffered played";
             if(mStatus != AVDefine::MediaStatus_Seeking && (this->autoPlay() || mIsClickedPlay))
                 play();
             mIsClickedPlay = false;

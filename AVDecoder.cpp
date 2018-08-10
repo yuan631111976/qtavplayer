@@ -131,13 +131,16 @@ AVDecoder::~AVDecoder(){
 
 
 void AVDecoder::init(){
-    if(avformat_open_input(&mFormatCtx, mFilename.toLatin1().constData(), NULL, NULL) != 0)
+    if(mIsInit)
+        return;
+//    qDebug() << "-------------------------------- A";
+    if(avformat_open_input(&mFormatCtx, mFilename.toStdString().c_str(), NULL, NULL) != 0)
     {
-//        qDebug() << "avformat_open_input 1";
+        qDebug() << "avformat_open_input 1:";
         statusChanged(AVDefine::MediaStatus_NoMedia);
         return;
     }
-
+//    qDebug() << "-------------------------------- B";
     if(avformat_find_stream_info(mFormatCtx, NULL) < 0)
     {
         //qDebug() << "FindFail";
@@ -145,7 +148,7 @@ void AVDecoder::init(){
         statusChanged(AVDefine::MediaStatus_InvalidMedia);
         return;
     }
-
+//    qDebug() << "-------------------------------- C";
     mHasSubtitle = false;
 
     /* 寻找视频流 */
@@ -200,7 +203,7 @@ void AVDecoder::init(){
             }
         }
     }
-
+//    qDebug() << "-------------------------------- D";
     if(mCallback){
         mCallback->mediaDurationChanged(mFormatCtx->duration / 1000);
     }
@@ -236,7 +239,7 @@ void AVDecoder::init(){
             }
         }
     }
-
+//    qDebug() << "-------------------------------- E";
 //    mIsOpenAudioCodec = false;
 //    mIsOpenVideoCodec = false;
     if(!mIsOpenVideoCodec && !mIsOpenAudioCodec){ //如果即没有音频，也没有视频，则通知状态无效
@@ -244,7 +247,7 @@ void AVDecoder::init(){
         release();//释放所有资源
         return;
     }
-
+//    qDebug() << "-------------------------------- H";
     if(mIsOpenVideoCodec){
         mFrame = av_frame_alloc();
         mFrame1 = av_frame_alloc();
@@ -259,11 +262,16 @@ void AVDecoder::init(){
         vFormat.rotate = mRotate;
         vFormat.format = mVideoCodecCtx->pix_fmt;
 
+//        qDebug() <<"----------------------- : " << mVideoCodecCtx->pix_fmt << ":" << AV_PIX_FMT_UYVY422;
         switch (mVideoCodecCtx->pix_fmt) {
         case AV_PIX_FMT_YUV420P :
         case AV_PIX_FMT_YUVJ420P :
+        case AV_PIX_FMT_YUV422P :
+        case AV_PIX_FMT_YUVJ422P :
         case AV_PIX_FMT_YUV444P :
         case AV_PIX_FMT_YUVJ444P :
+        case AV_PIX_FMT_GRAY8 :
+        case AV_PIX_FMT_UYVY422 :
             break;
 //        case AV_PIX_FMT_BGRA :
 //        case AV_PIX_FMT_RGB24 :
@@ -271,36 +279,36 @@ void AVDecoder::init(){
 
 //            avio_alloc_context
         default: //AV_PIX_FMT_YUV420P
-            mVideoSwsCtx = sws_getContext(
-                mVideoCodecCtx->width,
-                mVideoCodecCtx->height,
-                mVideoCodecCtx->pix_fmt,
-                mVideoCodecCtx->width,
-                mVideoCodecCtx->height,
-                AV_PIX_FMT_YUV420P,
-                SWS_BICUBIC,NULL,NULL,NULL);
-            mFrameYUV = av_frame_alloc();
+//            mVideoSwsCtx = sws_getContext(
+//                mVideoCodecCtx->width,
+//                mVideoCodecCtx->height,
+//                mVideoCodecCtx->pix_fmt,
+//                mVideoCodecCtx->width,
+//                mVideoCodecCtx->height,
+//                AV_PIX_FMT_YUV420P,
+//                SWS_BICUBIC,NULL,NULL,NULL);
+//            mFrameYUV = av_frame_alloc();
 
 
-            int numBytes = av_image_get_buffer_size( AV_PIX_FMT_YUV420P, mVideoCodecCtx->width,mVideoCodecCtx->height, 1  );
-            mYUVBuffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
-            int buffSize = av_image_fill_arrays( mFrameYUV->data, mFrameYUV->linesize, mYUVBuffer, AV_PIX_FMT_YUV420P,mVideoCodecCtx->width,mVideoCodecCtx->height, 1 );
-            if( buffSize < 1 )
-            {
-                av_frame_free( &mFrameYUV );
-                av_free( mYUVBuffer );
-                sws_freeContext(mVideoSwsCtx);
-                mVideoSwsCtx = NULL;
-                mYUVBuffer = NULL;
-                mFrameYUV = NULL;
-            }
+//            int numBytes = av_image_get_buffer_size( AV_PIX_FMT_YUV420P, mVideoCodecCtx->width,mVideoCodecCtx->height, 1  );
+//            mYUVBuffer = (uint8_t *)av_malloc(numBytes * sizeof(uint8_t));
+//            int buffSize = av_image_fill_arrays( mFrameYUV->data, mFrameYUV->linesize, mYUVBuffer, AV_PIX_FMT_YUV420P,mVideoCodecCtx->width,mVideoCodecCtx->height, 1 );
+//            if( buffSize < 1 )
+//            {
+//                av_frame_free( &mFrameYUV );
+//                av_free( mYUVBuffer );
+//                sws_freeContext(mVideoSwsCtx);
+//                mVideoSwsCtx = NULL;
+//                mYUVBuffer = NULL;
+//                mFrameYUV = NULL;
+//            }
             break;
         }
         packet_queue_init(&videoq);
         mIsVideoLoadedCompleted = false;
     }
 
-
+//    qDebug() << "-------------------------------- I";
     if(mIsOpenAudioCodec){
         mAudioFrame = av_frame_alloc();
 
@@ -356,7 +364,7 @@ void AVDecoder::init(){
 
     mIsInit = true;
     statusChanged(AVDefine::MediaStatus_Buffering);
-
+//    qDebug() << "-------------------------------- J";
 //    decodec();
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
 }
@@ -691,7 +699,14 @@ void AVDecoder::decodec(){
 }
 
 void AVDecoder::setFilename(const QString &source){
-    if(mFilename.size() != 0){
+    mProcessThread.clearAllTask(); //清除所有任务
+    mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_SetFileName,0,source));
+
+}
+
+void AVDecoder::setFilenameImpl(const QString &source){
+    mProcessThread.clearAllTask(); //清除所有任务
+    if(mFilename.size() > 0){
         if(audioq.nb_packets > 0)
             packet_queue_flush(&audioq);
         if(videoq.nb_packets > 0)
@@ -704,6 +719,8 @@ void AVDecoder::setFilename(const QString &source){
         release();//释放所有资源
     }
     mFilename = source;
+    mIsInit = false;
+    load();
 }
 
 void AVDecoder::setMediaCallback(AVMediaCallback *callback){
@@ -1181,5 +1198,8 @@ void AVCodecTask::run(){
     case AVCodecTaskCommand_Decodec:
         mCodec->decodec();
         break;
+    case AVCodecTaskCommand_SetFileName:{
+        mCodec->setFilenameImpl(param2);
+    }
     }
 }
