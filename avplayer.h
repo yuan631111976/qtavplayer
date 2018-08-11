@@ -22,7 +22,7 @@ class AVPlayer : public QObject , public AVMediaCallback , public AVMediaPlayer 
     Q_PROPERTY(bool autoPlay READ autoPlay WRITE setAutoPlay NOTIFY autoPlayChanged)
     Q_PROPERTY(bool hasAudio READ hasAudio NOTIFY hasAudioChanged)
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
-    Q_PROPERTY(bool status READ status NOTIFY statusChanged)
+    Q_PROPERTY(int status READ status NOTIFY statusChanged)
     Q_PROPERTY(bool renderFirstFrame READ renderFirstFrame WRITE setRenderFirstFrame)
     Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
     Q_PROPERTY(float playRate READ playRate WRITE setPlayRate NOTIFY playRateChanged)

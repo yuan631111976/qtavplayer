@@ -49,13 +49,12 @@ struct VideoFormat{
     float height;
     float rotate;
     int format;
-    int linesize[3];
 
     AVFrame *renderFrame;
     QMutex *renderFrameMutex;
 };
 
-class AVDecoder
+class AVDecoder : public QObject
 {
 public:
     AVDecoder();
@@ -66,8 +65,7 @@ public:
         int nb_packets;
         int size;
         int64_t time;
-        QMutex *mutex;
-        QWaitCondition *cond;
+        QMutex mutex;
         bool isInit;
     } PacketQueue;
 
@@ -109,7 +107,7 @@ public:
 private:
     void packet_queue_init(PacketQueue *q);
     int packet_queue_put(PacketQueue *q, AVPacket *pkt);
-    int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block);
+    int packet_queue_get(PacketQueue *q, AVPacket *pkt);
     void packet_queue_flush(PacketQueue *q);
     void packet_queue_destroy(PacketQueue *q);
 
@@ -157,9 +155,9 @@ private :
     int mSeekTime; //拖动的时间
     bool mIsInit;
 
-    int mIsAudioPlayed; // 音频是否播放完成
-    int mIsVideoPlayed;  //视频是否播放完成
-    int mIsSubtitlePlayed;
+    bool mIsAudioPlayed; // 音频是否播放完成
+    bool mIsVideoPlayed;  //视频是否播放完成
+    bool mIsSubtitlePlayed;
 
     /** 视频的旋转角度，由于手机录出来的视频带有旋转度数 */
     int mRotate;
@@ -236,7 +234,7 @@ public :
         AVCodecTaskCommand_SetBufferSize,
         AVCodecTaskCommand_SetMediaBufferMode,
         AVCodecTaskCommand_Decodec ,
-        AVCodecTaskCommand_SetFileName
+        AVCodecTaskCommand_SetFileName ,
     };
     AVCodecTask(AVDecoder *codec,AVCodecTaskCommand command,double param = 0,QString param2 = ""):
         mCodec(codec),command(command),param(param),param2(param2){}

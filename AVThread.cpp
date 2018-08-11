@@ -95,7 +95,6 @@ Task *AVThread::getTask(){
 }
 
 void AVThread::run(){
-    int i = 0;
     while(mIsRunning){
         Task * task = getTask();
         if(task == NULL){

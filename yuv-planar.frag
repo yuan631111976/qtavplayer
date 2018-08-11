@@ -29,6 +29,8 @@ void main()
         yuv.x = texture2D(tex_y, textureOut - tex_offset).x;
     }
 
+//    yuv *= 1.25;
+
     vec4 rgba;
     if(tex_format == 0){//yuv
         rgba.r = yuv.x + 1.596 * yuv.z;

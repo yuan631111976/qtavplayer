@@ -107,16 +107,9 @@ AVDecoder::AVDecoder()
 #endif
 
 
-    audioq.isInit = false;
-    videoq.isInit = false;
-    subtitleq.isInit = false;
-
-    audioq.size = 0;
-    audioq.nb_packets = 0;
-    videoq.size = 0;
-    videoq.nb_packets = 0;
-    subtitleq.size = 0;
-    subtitleq.nb_packets = 0;
+    packet_queue_destroy(&audioq);
+    packet_queue_destroy(&videoq);
+    packet_queue_destroy(&subtitleq);
 }
 
 AVDecoder::~AVDecoder(){
@@ -133,22 +126,20 @@ AVDecoder::~AVDecoder(){
 void AVDecoder::init(){
     if(mIsInit)
         return;
-//    qDebug() << "-------------------------------- A";
     if(avformat_open_input(&mFormatCtx, mFilename.toStdString().c_str(), NULL, NULL) != 0)
     {
-        qDebug() << "avformat_open_input 1:";
+        qDebug() << "media open error : " << mFilename.toStdString().data();
         statusChanged(AVDefine::MediaStatus_NoMedia);
         return;
     }
-//    qDebug() << "-------------------------------- B";
+
     if(avformat_find_stream_info(mFormatCtx, NULL) < 0)
     {
-        //qDebug() << "FindFail";
-//        qDebug() << "avformat_open_input 2";
+        qDebug() << "media find stream error : " << mFilename.toStdString().data();
         statusChanged(AVDefine::MediaStatus_InvalidMedia);
         return;
     }
-//    qDebug() << "-------------------------------- C";
+
     mHasSubtitle = false;
 
     /* 寻找视频流 */
@@ -203,7 +194,7 @@ void AVDecoder::init(){
             }
         }
     }
-//    qDebug() << "-------------------------------- D";
+
     if(mCallback){
         mCallback->mediaDurationChanged(mFormatCtx->duration / 1000);
     }
@@ -239,7 +230,7 @@ void AVDecoder::init(){
             }
         }
     }
-//    qDebug() << "-------------------------------- E";
+
 //    mIsOpenAudioCodec = false;
 //    mIsOpenVideoCodec = false;
     if(!mIsOpenVideoCodec && !mIsOpenAudioCodec){ //如果即没有音频，也没有视频，则通知状态无效
@@ -247,7 +238,7 @@ void AVDecoder::init(){
         release();//释放所有资源
         return;
     }
-//    qDebug() << "-------------------------------- H";
+
     if(mIsOpenVideoCodec){
         mFrame = av_frame_alloc();
         mFrame1 = av_frame_alloc();
@@ -262,7 +253,7 @@ void AVDecoder::init(){
         vFormat.rotate = mRotate;
         vFormat.format = mVideoCodecCtx->pix_fmt;
 
-//        qDebug() <<"----------------------- : " << mVideoCodecCtx->pix_fmt << ":" << AV_PIX_FMT_UYVY422;
+        qDebug() <<"----------------------- : " << mVideoCodecCtx->pix_fmt << ":" << AV_PIX_FMT_YUV420P10LE;
         switch (mVideoCodecCtx->pix_fmt) {
         case AV_PIX_FMT_YUV420P :
         case AV_PIX_FMT_YUVJ420P :
@@ -272,6 +263,7 @@ void AVDecoder::init(){
         case AV_PIX_FMT_YUVJ444P :
         case AV_PIX_FMT_GRAY8 :
         case AV_PIX_FMT_UYVY422 :
+        case AV_PIX_FMT_YUV420P10LE :
             break;
 //        case AV_PIX_FMT_BGRA :
 //        case AV_PIX_FMT_RGB24 :
@@ -308,7 +300,7 @@ void AVDecoder::init(){
         mIsVideoLoadedCompleted = false;
     }
 
-//    qDebug() << "-------------------------------- I";
+
     if(mIsOpenAudioCodec){
         mAudioFrame = av_frame_alloc();
 
@@ -362,61 +354,62 @@ void AVDecoder::init(){
         }
     }
 
+    mVideoDecodedCount = 0;
     mIsInit = true;
     statusChanged(AVDefine::MediaStatus_Buffering);
-//    qDebug() << "-------------------------------- J";
-//    decodec();
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
 }
 
 void AVDecoder::release(bool isDeleted){
+//    qDebug() << "-----------------1";
     if(mFormatCtx != NULL){
         avformat_close_input(&mFormatCtx);
         avformat_free_context(mFormatCtx);
         mFormatCtx = NULL;
     }
+//    qDebug() << "-----------------2";
     if(mAudioCodecCtx != NULL){
         avcodec_close(mAudioCodecCtx);
         avcodec_free_context(&mAudioCodecCtx);
         mAudioCodecCtx = NULL;
     }
-
+//    qDebug() << "-----------------3";
     if(mVideoCodecCtx != NULL){
         avcodec_close(mVideoCodecCtx);
         avcodec_free_context(&mVideoCodecCtx);
         mVideoCodecCtx = NULL;
     }
-
+//    qDebug() << "-----------------4";
     if(mAudioCodec != NULL){
         av_free(mAudioCodec);
         mAudioCodec = NULL;
     }
-
+//    qDebug() << "-----------------5";
     if(mVideoCodec != NULL){
         av_free(mVideoCodec);
         mVideoCodec = NULL;
     }
-
+//    qDebug() << "-----------------6";
     if(mFrame != NULL){
         av_frame_free(&mFrame);
         mFrame = NULL;
     }
-
+//    qDebug() << "-----------------7";
     if(mFrame1 != NULL){
         av_frame_free(&mFrame1);
         mFrame1 = NULL;
     }
-
+//    qDebug() << "-----------------8";
     if(mAudioFrame != NULL){
         av_frame_free(&mAudioFrame);
         mAudioFrame = NULL;
     }
-
+//    qDebug() << "-----------------9";
     if(mFrameYUV != NULL){
         delete mFrameYUV;
         mFrameYUV = NULL;
     }
-
+//    qDebug() << "-----------------10";
     mIsOpenAudioCodec = false;
     mIsOpenVideoCodec = false;
     mRotate = 0;
@@ -483,12 +476,6 @@ void AVDecoder::release(bool isDeleted){
     packet_queue_destroy(&audioq);
     packet_queue_destroy(&videoq);
     packet_queue_destroy(&subtitleq);
-    audioq.size = 0;
-    audioq.nb_packets = 0;
-    videoq.size = 0;
-    videoq.nb_packets = 0;
-    subtitleq.size = 0;
-    subtitleq.nb_packets = 0;
 }
 
 void AVDecoder::decodec(){
@@ -501,6 +488,7 @@ void AVDecoder::decodec(){
         return;
 
     if(mIsSeek){
+//        qDebug() <<"------------- seek";
         statusChanged(AVDefine::MediaStatus_Seeking);
         av_seek_frame(mFormatCtx,-1,mSeekTime * 1000,AVSEEK_FLAG_BACKWARD);
         mIsSeek = false;
@@ -541,6 +529,8 @@ void AVDecoder::decodec(){
 
 //    qDebug() << "------------------------------- decodec:" << pkt.stream_index << ":" << mFormatCtx->streams[pkt.stream_index]->codec->codec_type;
     if (pkt.stream_index == mVideoIndex && mIsOpenVideoCodec){
+//        qDebug() <<"------------- video";
+        mIsVideoLoadedCompleted = false;
         if(!mIsSeekd){
             int currentTime = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * pkt.pts * 1000;
             if(currentTime < mSeekTime){
@@ -579,9 +569,10 @@ void AVDecoder::decodec(){
         if(pkt.pts == AV_NOPTS_VALUE){
             mIsVideoLoadedCompleted = true;
         }else{
-            mIsAudioLoadedCompleted = false;
+            mIsVideoLoadedCompleted = false;
         }
     }else if(pkt.stream_index == mAudioIndex && mIsOpenAudioCodec){
+        mIsAudioLoadedCompleted = false;
         if(!mIsSeekd){
             qint64 audioTime = av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * pkt.pts * 1000;
             if(audioTime < mSeekTime){ //如果音频时间小于拖动的时间，则丢掉音频包
@@ -608,11 +599,11 @@ void AVDecoder::decodec(){
         av_packet_unref(&pkt);
         mIsSubtitleSeeked = true;
         mIsSubtitlePlayed = false;
-        qDebug() << "------------------------------- AVMEDIA_TYPE_SUBTITLE";
+//        qDebug() << "------------------------------- AVMEDIA_TYPE_SUBTITLE";
 //        qDebug() << "------------------------------- AVMEDIA_TYPE_SUBTITLE:" << pkt.stream_index << ":" << AVMEDIA_TYPE_SUBTITLE;
     }
     else if(mFormatCtx->streams[pkt.stream_index]->codec->codec_type == AVMEDIA_TYPE_DATA){
-        qDebug() << "------------------------------- AVMEDIA_TYPE_DATA";
+//        qDebug() << "------------------------------- AVMEDIA_TYPE_DATA";
         av_packet_unref(&pkt);
         mIsAudioLoadedCompleted = false;
         mIsVideoLoadedCompleted = false;
@@ -622,33 +613,45 @@ void AVDecoder::decodec(){
         mIsAudioLoadedCompleted = false;
         mIsVideoLoadedCompleted = false;
     }
+
     if((!mIsVideoSeeked && hasVideo()) || (!mIsAudioSeeked && hasAudio()) || (!mIsSubtitleSeeked && mHasSubtitle)){ //如果其中某一个元素未完成拖动，则继续解码s
-//        decodec();
         mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
     }else{
         if(mMediaBufferMode == AVDefine::MediaBufferMode_Time){
             //判断是否将设定的缓存装满，如果未装满的话，一直循环
             int vstartTime = 0,vendTime = 0;
             if(mIsOpenVideoCodec){
-                videoq.mutex->lock();
+                videoq.mutex.lock();
                 vstartTime = videoq.nb_packets == 0 ? 0 : av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * videoq.first_pkt->pkt.pts * 1000;
                 vendTime = videoq.nb_packets == 0 ? 0 : av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * videoq.last_pkt->pkt.pts * 1000;
-                videoq.mutex->unlock();
+                videoq.mutex.unlock();
             }
 
             int astartTime = 0,aendTime = 0;
             if(mIsOpenAudioCodec){
-                audioq.mutex->lock();
+                audioq.mutex.lock();
                 astartTime = audioq.nb_packets == 0 ? 0 : av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * audioq.first_pkt->pkt.pts * 1000;
                 aendTime = audioq.nb_packets == 0 ? 0 : av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * audioq.last_pkt->pkt.pts * 1000;
-                audioq.mutex->unlock();
+                audioq.mutex.unlock();
             }
 
-            if((vendTime - vstartTime < mBufferSize && mIsOpenVideoCodec && !mIsVideoLoadedCompleted) ||
-                    (aendTime - astartTime < mBufferSize && mIsOpenAudioCodec && !mIsAudioLoadedCompleted) ){
-//                decodec();
+//            qDebug() << "---------" << (vendTime - vstartTime) << ":" << mIsOpenVideoCodec <<  ":" << mIsVideoLoadedCompleted;
+            if(((vendTime - vstartTime < mBufferSize && mIsOpenVideoCodec && !mIsVideoLoadedCompleted) ||
+                    (aendTime - astartTime < mBufferSize && mIsOpenAudioCodec && !mIsAudioLoadedCompleted))
+                    && vendTime - vstartTime < mBufferSize && aendTime - astartTime < mBufferSize
+                    ){//只要有一种流装满，则不继续处理
                 mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
             }else{
+                videoq.mutex.lock();
+                if(videoq.nb_packets == 0){
+                    mIsVideoLoadedCompleted = true;
+                }
+                videoq.mutex.unlock();
+                audioq.mutex.lock();
+                if(audioq.nb_packets == 0){
+                    mIsAudioLoadedCompleted = true;
+                }
+                audioq.mutex.unlock();
                 if(!mIsSeekd){
                     mIsSeekd = true;
                     if(mCallback){
@@ -663,7 +666,6 @@ void AVDecoder::decodec(){
             }
         }else if(mMediaBufferMode == AVDefine::MediaBufferMode_Packet){
             if((videoq.nb_packets < mBufferSize && mIsOpenVideoCodec && !mIsVideoLoadedCompleted) || (audioq.nb_packets < mBufferSize && mIsOpenAudioCodec && !mIsAudioLoadedCompleted) )
-//                decodec();
                 mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
             else{
                 if(!mIsSeekd){
@@ -707,12 +709,9 @@ void AVDecoder::setFilename(const QString &source){
 void AVDecoder::setFilenameImpl(const QString &source){
     mProcessThread.clearAllTask(); //清除所有任务
     if(mFilename.size() > 0){
-        if(audioq.nb_packets > 0)
-            packet_queue_flush(&audioq);
-        if(videoq.nb_packets > 0)
-            packet_queue_flush(&videoq);
-        if(subtitleq.nb_packets > 0)
-            packet_queue_flush(&subtitleq);
+        packet_queue_flush(&audioq);
+        packet_queue_flush(&videoq);
+        packet_queue_flush(&subtitleq);
         memset(&audioq,0,sizeof(PacketQueue));
         memset(&videoq,0,sizeof(PacketQueue));
         memset(&subtitleq,0,sizeof(PacketQueue));
@@ -769,7 +768,6 @@ void AVDecoder::checkBuffer(){
         if(mIsOpenAudioCodec){
             int astartTime = audioq.nb_packets == 0 ? 0 : av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * audioq.first_pkt->pkt.pts * 1000;
             int aendTime = audioq.nb_packets == 0 ? 0 : av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * audioq.last_pkt->pkt.pts * 1000;
-//            qDebug() << "----------------------------- audio time : " << (aendTime - astartTime);
             if(aendTime - astartTime < mBufferSize ){
                 mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
             }
@@ -810,37 +808,47 @@ bool AVDecoder::hasAudio(){
 
 void AVDecoder::slotSeek(int ms){
     if(ms == 0){
-        int vstartTime = 0;
+        int vstartTime = -1;
         if(hasVideo()){
-            videoq.mutex->lock();
+            videoq.mutex.lock();
             vstartTime = videoq.nb_packets == 0 ? -1 : av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * videoq.first_pkt->pkt.pts * 1000;
-            videoq.mutex->unlock();
+            videoq.mutex.unlock();
         }
 
-        int astartTime = 0;
+        int astartTime = -1;
         if(hasAudio()){
-            audioq.mutex->lock();
+            audioq.mutex.lock();
             astartTime = audioq.nb_packets == 0 ? -1 : av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * audioq.first_pkt->pkt.pts * 1000;
-            audioq.mutex->unlock();
+            audioq.mutex.unlock();
         }
-        if((vstartTime == astartTime || !hasAudio()) && (vstartTime == ms && hasVideo())){
+
+//        qDebug() << "---------------:" << astartTime << vstartTime;
+        if(((vstartTime < 600 && vstartTime >= 0) || !hasVideo())
+            && ((astartTime < 600 && astartTime >= 0) || !hasAudio())
+                ){
+//            qDebug() << "---------------:MediaStatus_Seeked";
             statusChanged(AVDefine::MediaStatus_Seeked);
             return;
         }
+
+//        if((vstartTime == astartTime || !hasAudio()) && (vstartTime == ms && hasVideo())){
+//            statusChanged(AVDefine::MediaStatus_Seeked);
+//            return;
+//        }
     }
 
     //清除队列
-    if(audioq.nb_packets > 0)
-        packet_queue_flush(&audioq);
-    if(videoq.nb_packets > 0)
-        packet_queue_flush(&videoq);
-    if(subtitleq.nb_packets > 0)
-        packet_queue_flush(&subtitleq);
+
+    packet_queue_flush(&audioq);
+    packet_queue_flush(&videoq);
+    packet_queue_flush(&subtitleq);
     mIsSeek = true;
     mSeekTime = ms;
     mIsReadFinish = false;
     mIsAudioLoadedCompleted = true;
     mIsVideoLoadedCompleted = true;
+    mIsVideoPlayed = false;
+    mIsAudioPlayed = false;
     checkBuffer();
 }
 
@@ -888,7 +896,7 @@ void AVDecoder::slotRenderNextFrame(){
 
     mVideoDecodecMutex.lock();
     AVPacket pkt;
-    int isPacket = packet_queue_get(&videoq,&pkt,0);
+    int isPacket = packet_queue_get(&videoq,&pkt);
     if(isPacket){
         mVideoCodecCtxMutex.lock();
         int ret = avcodec_send_packet(mVideoCodecCtx, &pkt);
@@ -968,8 +976,7 @@ void AVDecoder::slotRenderNextFrame(){
         else{
             mIsVideoPlayed = true;
         }
-
-        if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed){
+        if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
             emit statusChanged(AVDefine::MediaStatus_Played);
         }
     }
@@ -995,7 +1002,7 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
     mAudioBufferMutex.unlock();
     if(audioBufferLen < len){
         AVPacket pkt;
-        int isPacket = packet_queue_get(&audioq,&pkt,0);
+        int isPacket = packet_queue_get(&audioq,&pkt);
         if(isPacket){
             int ret = avcodec_send_packet(mAudioCodecCtx, &pkt);
             while (ret >= 0) {
@@ -1058,32 +1065,35 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
         }
     }
 
-    if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed){
+    if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
         emit statusChanged(AVDefine::MediaStatus_Played);
     }
 }
 
 int AVDecoder::getCurrentVideoTime(){
-    int time = -1;
+    int time = mIsReadFinish ? -1 : 0;
     if(hasVideo()){
-        videoq.mutex->lock();
+        videoq.mutex.lock();
         if(videoq.nb_packets > 0){
             time = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base) * videoq.first_pkt->pkt.pts * 1000;
         }
-        videoq.mutex->unlock();
+        videoq.mutex.unlock();
     }
     return time;
 }
 
 void AVDecoder::packet_queue_init(PacketQueue *q) {
-    memset(q, 0, sizeof(PacketQueue));
-    q->mutex = new QMutex;
-    q->cond = new QWaitCondition;
+//    memset(q, 0, sizeof(PacketQueue));
+//    q->mutex = new QMutex;
+
+    q->mutex.lock();
     q->size = 0;
     q->nb_packets = 0;
     q->first_pkt = NULL;
     q->last_pkt = NULL;
     q->isInit = true;
+    q->time = 0;
+    q->mutex.unlock();
 }
 
 int AVDecoder::packet_queue_put(PacketQueue *q, AVPacket *pkt) {
@@ -1097,7 +1107,7 @@ int AVDecoder::packet_queue_put(PacketQueue *q, AVPacket *pkt) {
     pkt1->pkt = *pkt;
     pkt1->next = NULL;
 
-    q->mutex->lock();
+    q->mutex.lock();
 
     if (!q->last_pkt)
         q->first_pkt = pkt1;
@@ -1107,17 +1117,20 @@ int AVDecoder::packet_queue_put(PacketQueue *q, AVPacket *pkt) {
     q->nb_packets++;
     q->size += pkt1->pkt.size;
 
-    q->cond->wakeOne();
-
-    q->mutex->unlock();
+    q->mutex.unlock();
     return 0;
 }
 
-int AVDecoder::packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
+int AVDecoder::packet_queue_get(PacketQueue *q, AVPacket *pkt) {
     AVPacketList *pkt1;
     int ret;
 
-    q->mutex->lock();
+    q->mutex.lock();
+    if(q->nb_packets == 0)
+    {
+        q->mutex.unlock();
+        return 0;
+    }
     for (;;) {
         pkt1 = q->first_pkt;
         if (pkt1) {
@@ -1130,24 +1143,24 @@ int AVDecoder::packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
             av_free(pkt1);
             ret = 1;
             break;
-        } else if (!block) {
+        } else{
             ret = 0;
             break;
-        } else {
-            q->cond->wait(q->mutex);
         }
     }
-
-    q->mutex->unlock();
+    q->mutex.unlock();
     return ret;
 }
 
 void AVDecoder::packet_queue_flush(PacketQueue *q)
 {
+    q->mutex.lock();
     AVPacketList *pkt, *pkt1;
-    if(q->nb_packets == 0 || !q->isInit)
+    if(q->nb_packets == 0 || !q->isInit){
+        q->mutex.unlock();
         return;
-    q->mutex->lock();
+    }
+
     for(pkt = q->first_pkt; pkt != NULL; pkt = pkt1)
     {
         pkt1 = pkt->next;
@@ -1159,17 +1172,27 @@ void AVDecoder::packet_queue_flush(PacketQueue *q)
     q->first_pkt = NULL;
     q->nb_packets = 0;
     q->size = 0;
-    q->mutex->unlock();
+    q->time = 0;
+    q->mutex.unlock();
 }
 
 void AVDecoder::packet_queue_destroy(PacketQueue *q)
 {
+    q->mutex.lock();
+    bool isEnter  = false;
     if(q->isInit){
+        isEnter = true;
+        q->mutex.unlock();
+
         packet_queue_flush(q);
-        delete q->mutex;
-        delete q->cond;
+
+        q->mutex.lock();
         q->isInit = false;
+        q->mutex.unlock();
     }
+
+    if(!isEnter)
+        q->mutex.unlock();
 }
 
 void AVDecoder::statusChanged(AVDefine::MediaStatus status){

@@ -136,6 +136,7 @@ public:
         , mIsInitTextures(false)
         , mRenderFormet(AVRenderer::UNKONW)
         , mForceUpdate(true)
+        , mBitDepth(0)
     {
 //        m_format.width = 0;
 //        m_format.height = 0;
@@ -177,6 +178,7 @@ private:
     int mTextureFormatValue;
     int mTextureOffset;
     int pboIndex;
+    int mBitDepth; //位深度
 
     VideoFormat m_format;
     QMutex mDataMutex;
