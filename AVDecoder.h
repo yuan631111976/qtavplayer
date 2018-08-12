@@ -54,6 +54,42 @@ struct VideoFormat{
     QMutex *renderFrameMutex;
 };
 
+class RenderItem{
+public :
+    RenderItem()
+        : pts(AV_NOPTS_VALUE)
+        , valid (false)
+        , isRendered(false)
+    {
+        frame = av_frame_alloc();
+    }
+
+    void release(){
+        if(frame != NULL){
+            av_frame_unref(frame);
+        }
+        pts = AV_NOPTS_VALUE;
+        valid = false;
+        isRendered = false;
+    }
+
+    ~RenderItem(){
+        if(frame != NULL){
+            av_frame_unref(frame);
+            av_frame_free(&frame);
+        }
+        pts = AV_NOPTS_VALUE;
+        valid = false;
+        isRendered = false;
+    }
+
+    AVFrame * frame; //帧
+    qint64 pts; //播放时间
+    bool valid; //有效的
+    bool isRendered;
+    QMutex mutex;
+};
+
 class AVDecoder : public QObject
 {
 public:
@@ -84,13 +120,15 @@ public:
     float getPlayRate();
     /** 渲染第一帧 */
     void renderFirstFrame();
-    int getCurrentVideoTime();
+    int requestRenderNextFrame();
     /** 渲染最后第一帧 */
-    void renderNextFrame();
+    void checkRenderList();
     /** 请求向音频buffer添加数据  */
     void requestAudioNextFrame(int);
     /** video是否播放完成 */
     bool isVideoPlayed();
+
+    qint64 nextTime();
 public:
     void slotSeek(int ms);
     void slotSetBufferSize(int size);
@@ -104,15 +142,21 @@ public:
     void release(bool isDeleted = false);
     void decodec();
     void setFilenameImpl(const QString &source);
+    void stop();
 private:
-    void packet_queue_init(PacketQueue *q);
-    int packet_queue_put(PacketQueue *q, AVPacket *pkt);
-    int packet_queue_get(PacketQueue *q, AVPacket *pkt);
-    void packet_queue_flush(PacketQueue *q);
-    void packet_queue_destroy(PacketQueue *q);
+    void initPacketQueue(PacketQueue *q);
+    int putPacketQueue(PacketQueue *q, AVPacket *pkt);
+    int getPacketQueue(PacketQueue *q, AVPacket *pkt);
+    void flushPacketQueue(PacketQueue *q);
+    void destroyPacketQueue(PacketQueue *q);
 
     void statusChanged(AVDefine::MediaStatus);
 
+
+    void initRenderList();
+    int getRenderListSize();
+    void clearRenderList(bool isDelete = false);
+    RenderItem *getInvalidRenderItem();
 private :
     int mAudioIndex;
     int mVideoIndex;
@@ -138,6 +182,13 @@ private :
             *mAudioFrame,
             *mFrameYUV,
             *mHWFrame; //硬解BUFFER
+    QVector<RenderItem *> mRenderList; //渲染队列
+    int maxRenderListSize; //渲染队列最大数量
+    QMutex mRenderListMutex; //队列操作锁
+    int mRenderListCount;//队列数量
+    RenderItem *mLastRenderItem; //上一次的渲染对象
+
+
     int mFrameIndex; //使用的
     uint8_t *mYUVBuffer;
 
@@ -154,6 +205,7 @@ private :
     bool mIsSubtitleSeeked; //
     int mSeekTime; //拖动的时间
     bool mIsInit;
+    bool mIsNeedCallRenderFirstFrame;
 
     bool mIsAudioPlayed; // 音频是否播放完成
     bool mIsVideoPlayed;  //视频是否播放完成
@@ -235,6 +287,7 @@ public :
         AVCodecTaskCommand_SetMediaBufferMode,
         AVCodecTaskCommand_Decodec ,
         AVCodecTaskCommand_SetFileName ,
+        AVCodecTaskCommand_DecodeToRender,
     };
     AVCodecTask(AVDecoder *codec,AVCodecTaskCommand command,double param = 0,QString param2 = ""):
         mCodec(codec),command(command),param(param),param2(param2){}

@@ -230,6 +230,7 @@ void AVRenderer::paint(){
             m_format.renderFrame->data[0] == NULL ||
             m_format.renderFrame->width <= 0 ||
             m_format.renderFrame->height <= 0){
+//        qDebug() << "-------------------DEF" << m_format.renderFrame << m_format.renderFrame->data[0] << m_format.renderFrame->width;
         m_format.renderFrameMutex->unlock();
         mDataMutex.unlock();
         return;

@@ -33,4 +33,4 @@
 		}
 		
 		
-note : 如果需要替换ffmpeg库，直接替换libs/lib下面的库即可,最好是include和lib一起更换，保证是同一版本
+note : 如果需要替换ffmpeg库，直接替换libs/lib下面的库即可

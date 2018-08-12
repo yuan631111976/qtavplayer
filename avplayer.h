@@ -183,7 +183,6 @@ private:
     bool mIsPlaying;
     bool mIsSetPlayRate;
     bool mIsSetPlayRateBeforeIsPaused;
-    bool mIsDecoded;
     bool mIsClickedPlay;
     QMutex mStatusMutex;
 
