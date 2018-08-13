@@ -108,7 +108,7 @@ signals :
 
 public :
     void requestRender();
-    void requestAudioData(bool isNeedLock = false);
+    void requestAudioData();
 private :
     void wakeupPlayer();
 
@@ -230,7 +230,7 @@ public :
     virtual void run(){
         while(mIsRunning){
             if(mPlayer != NULL)
-                mPlayer->requestAudioData(true);
+                mPlayer->requestAudioData();
             mMutex.lock();
             mCondition.wait(&mMutex,20);
             mMutex.unlock();

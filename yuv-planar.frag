@@ -15,6 +15,7 @@ varying vec2 textureOut;
 void main()
 {
     vec3 yuv;
+    vec4 rgba;
     if(tex_format == 0 || tex_format == 1){
         if(tex_format == 0){
             yuv.x = texture2D(tex_y, textureOut - tex_offset).x - 0.0625;
@@ -24,13 +25,15 @@ void main()
         yuv.y = texture2D(tex_u, textureOut - tex_offset).x - 0.5;
         yuv.z = texture2D(tex_v, textureOut - tex_offset).x - 0.5;
     }else if(tex_format == 2){ // rgb
-
+        yuv = texture2D(tex_y, textureOut).rgb;
     }else if(tex_format == 3){ // gray8
         yuv.x = texture2D(tex_y, textureOut - tex_offset).x;
+    }else if(tex_format == 6){ //BGR
+        yuv = texture2D(tex_y, textureOut).bgr;
     }
 
 
-    vec4 rgba;
+
     if(tex_format == 0){//yuv
         rgba.r = yuv.x + 1.596 * yuv.z;
         rgba.g = yuv.x - 0.813 * yuv.z - 0.391 * yuv.y;
@@ -41,11 +44,17 @@ void main()
         rgba.b = yuv.x + 1.772 * yuv.y;
     }
     else if(tex_format == 2){ //rgb
-
+        rgba.r = yuv.r;
+        rgba.g = yuv.g;
+        rgba.b = yuv.b;
     }else if(tex_format == 3){ //gray8
         rgba.r = yuv.x;
         rgba.g = yuv.x;
         rgba.b = yuv.x;
+    }else if(tex_format == 6){ //BGR
+        rgba.r = yuv.b;
+        rgba.g = yuv.g;
+        rgba.b = yuv.r;
     }
     rgba.a = alpha;
     gl_FragColor = rgba;

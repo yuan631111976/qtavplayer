@@ -90,20 +90,101 @@ public :
     QMutex mutex;
 };
 
+class PacketQueue{
+public :
+    PacketQueue(){init();}
+    QMutex mutex;
+    QList<AVPacket *> packets;
+    AVRational time_base;
+
+    void setTimeBase(AVRational &timebase){
+        this->time_base.den = timebase.den;
+        this->time_base.num = timebase.num;
+    }
+
+    void init(){
+        bool locked = mutex.tryLock();
+        release();
+        if(locked)
+            mutex.unlock();
+    }
+
+    void put(AVPacket *pkt){
+        if(pkt == NULL)
+            return;
+        bool locked = mutex.tryLock();
+        packets.push_back(pkt);
+        if(locked)
+            mutex.unlock();
+    }
+
+    AVPacket *get(){
+        AVPacket *pkt = NULL;
+        bool locked = mutex.tryLock();
+        if(packets.size() > 0){
+            pkt = packets.front();
+            packets.pop_front();
+        }
+        if(locked)
+            mutex.unlock();
+        return pkt;
+    }
+
+    int diffTime(){
+        int time = 0;
+        bool locked = mutex.tryLock();
+        if(packets.size() > 1){
+            int start = av_q2d(time_base) * packets.front()->pts * 1000;
+            int end = av_q2d(time_base) * packets.back()->pts * 1000;
+            time = end - start;
+        }
+        if(locked)
+            mutex.unlock();
+        return time;
+    }
+
+    int startTime(){
+        int time = -1;
+        bool locked = mutex.tryLock();
+        if(packets.size() > 0){
+            time = av_q2d(time_base) * packets.front()->pts * 1000;
+        }
+        if(locked)
+            mutex.unlock();
+        return time;
+    }
+
+    int size(){
+        bool locked = mutex.tryLock();
+        int len = packets.size();
+        if(locked)
+            mutex.unlock();
+        return len;
+    }
+
+    void release(){
+        bool locked = mutex.tryLock();
+        QList<AVPacket *>::iterator begin = packets.begin();
+        QList<AVPacket *>::iterator end = packets.end();
+        while(begin != end){
+            AVPacket *pkt = *begin;
+            if(pkt != NULL){
+                av_packet_unref(pkt);
+                av_freep(pkt);
+            }
+            begin = packets.erase(begin);
+        }
+        if(locked)
+            mutex.unlock();
+    }
+
+};
+
 class AVDecoder : public QObject
 {
 public:
     AVDecoder();
     ~AVDecoder();
-
-    typedef struct PacketQueue {
-        AVPacketList *first_pkt, *last_pkt;
-        int nb_packets;
-        int size;
-        int64_t time;
-        QMutex mutex;
-        bool isInit;
-    } PacketQueue;
 
 public:
     void setMediaCallback(AVMediaCallback *);
@@ -144,11 +225,11 @@ public:
     void setFilenameImpl(const QString &source);
     void stop();
 private:
-    void initPacketQueue(PacketQueue *q);
-    int putPacketQueue(PacketQueue *q, AVPacket *pkt);
-    int getPacketQueue(PacketQueue *q, AVPacket *pkt);
-    void flushPacketQueue(PacketQueue *q);
-    void destroyPacketQueue(PacketQueue *q);
+//    void initPacketQueue(PacketQueue *q);
+//    int putPacketQueue(PacketQueue *q, AVPacket *pkt);
+//    int getPacketQueue(PacketQueue *q, AVPacket *pkt);
+//    void flushPacketQueue(PacketQueue *q);
+//    void destroyPacketQueue(PacketQueue *q);
 
     void statusChanged(AVDefine::MediaStatus);
 
@@ -177,8 +258,7 @@ private :
     bool mHasSubtitle;
 
     AVPacket mPacket;
-    AVFrame *mFrame, //视频帧缓冲1
-            *mFrame1, //视频帧缓冲2
+    AVFrame
             *mAudioFrame,
             *mFrameYUV,
             *mHWFrame; //硬解BUFFER
@@ -232,7 +312,6 @@ private :
     QMutex mRenderFrameMutex;
     QMutex mRenderFrameMutex2;
     bool mIsDestroy;
-    int mVideoDecodedCount; //已解码的包的数量
 
 
     QMutex mAudioSwrCtxMutex;

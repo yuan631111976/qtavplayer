@@ -9,19 +9,36 @@ precision mediump float;
 uniform sampler2D tex_y;
 uniform float alpha;
 uniform float tex_format;
+uniform float imageWidth;
 
 varying vec2 textureOut;
 
 void main() {
-    vec3 yuv = texture2D( tex_y, textureOut ).xyz;
-    if(tex_format == 0){//yuv
-        gl_FragColor.r = yuv.x + 1.596 * yuv.z;
-        gl_FragColor.g = yuv.x - 0.813 * yuv.z - 0.391 * yuv.y;
-        gl_FragColor.b = yuv.x + 2.018 * yuv.y;
-    }else if(tex_format == 1){ //yuy-jpeg
-        gl_FragColor.r = yuv.x + 1.402 * yuv.z;
-        gl_FragColor.g = yuv.x - 0.34413 * yuv.y - 0.71414 * yuv.z;
-        gl_FragColor.b = yuv.x + 1.772 * yuv.y;
+    vec4 uyvy = texture2D( tex_y, textureOut);
+    float u;
+    float v;
+    float y1;
+    float y2;
+    float y;
+    if(tex_format == 5){ //UYUV
+        u = uyvy[0] - 0.5;
+        v = uyvy[2] - 0.5;
+        y1 = uyvy[1];
+        y2 = uyvy[3];
+    }else if(tex_format == 4){ //YUYV
+        y1 = uyvy[0];
+        u = uyvy[1] - 0.5;
+        y2 = uyvy[2];
+        v = uyvy[3] - 0.5;
     }
+
+    if (fract(floor(textureOut.x * imageWidth + 0.5) / 2.0) > 0.0)
+        y = y2 - 0.0625;       // odd so choose Y1
+    else
+        y = y1 - 0.0625;       // even so choose Y0
+
+    gl_FragColor.r = y + 1.596 * v;
+    gl_FragColor.g = y - 0.813 * v - 0.391 * u;
+    gl_FragColor.b = y + 2.018 * u;
     gl_FragColor.a = alpha;
 }

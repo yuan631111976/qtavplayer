@@ -195,11 +195,13 @@ void AVPlayer::restart(){
             }
         }
     }
+
     mAudioMutex.unlock();
     mAudioTimer->begin();
     wakeupPlayer();
     mCondition.wakeAll();
     mPlaybackState = AVDefine::PlayingState;
+
     if(mPlayerCallback != NULL)
         mPlayerCallback->playStatusChanged(AVDefine::PlayingState);
     emit playStatusChanged();
@@ -419,12 +421,11 @@ void AVPlayer::mediaUpdateAudioFrame(const QByteArray &buffer){
     emit positionChanged();
 }
 
-void AVPlayer::requestAudioData(bool isNeedLock){
+void AVPlayer::requestAudioData(){
     if(getIsPaused())
         return;
-    if(isNeedLock){
-        mAudioMutex.lock();
-    }
+
+    bool locked = mAudioMutex.tryLock();
     int chunks = 0;
     int periodSize = 0;
     if (mAudio && mAudio->state() != QAudio::StoppedState) {
@@ -432,7 +433,7 @@ void AVPlayer::requestAudioData(bool isNeedLock){
         chunks = mAudio->bytesFree()/periodSize;
     }
 
-    if(isNeedLock){
+    if(locked){
         mAudioMutex.unlock();
     }
 

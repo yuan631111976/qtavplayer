@@ -112,13 +112,21 @@ public:
         YUV444 ,
 
         GRAY8 ,
+
+        UYVYORYUYV422 ,
+
+        BGR24 ,
+
     };
 
     enum TextureFormat{
-        YUV,
-        YUVJ,
-        RGB ,
-        GRAY ,
+        YUV = 0,
+        YUVJ = 1,
+        RGB = 2,
+        GRAY = 3,
+        YUYV = 4,
+        UYVY = 5 ,
+        BGR = 6,
     };
 
     AVRenderer(AVOutput *output)
@@ -177,6 +185,7 @@ private:
     int mTextureFormat;
     int mTextureFormatValue;
     int mTextureOffset;
+    int mImageWidthId;
     int pboIndex;
     int mBitDepth; //位深度
 
@@ -193,5 +202,7 @@ private:
     bool mIsInitTextures;
     RenderFormat mRenderFormet;
     bool mForceUpdate; //强制更新
+
+    int mGLImageFormat; //图像格式 GL_RGBA GL_LUMINANCE
 };
 #endif // AVOUTPUT_H
