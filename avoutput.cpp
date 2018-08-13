@@ -109,7 +109,7 @@ void AVRenderer::init(){
         case AV_PIX_FMT_UYVY422:mTextureFormatValue = UYVY;mRenderFormet = UYVYORYUYV422;mGLImageFormat = GL_RGBA;break;
         case AV_PIX_FMT_YUYV422:mTextureFormatValue = YUYV;mRenderFormet = UYVYORYUYV422;mGLImageFormat = GL_RGBA;break;
         case AV_PIX_FMT_BGR24 : mTextureFormatValue = BGR;mRenderFormet = BGR24;mGLImageFormat = GL_BGR;break;
-        case AV_PIX_FMT_RGB24 : mTextureFormatValue = RGB;mRenderFormet = BGR24;mGLImageFormat = GL_BGR;break;
+        case AV_PIX_FMT_RGB24 : mTextureFormatValue = RGB;mRenderFormet = BGR24;mGLImageFormat = GL_RGB;break;
         case AV_PIX_FMT_YUV420P10LE:mTextureFormatValue = YUV;mRenderFormet = YUV420P;mBitDepth = 10;break;
         default :mTextureFormatValue = YUV;mRenderFormet = YUV420P;break;
         }
