@@ -31,6 +31,45 @@ static const GLfloat textureVertices[] = {
     1.0f,  1.0f,
 };
 
+static QMap<AVPixelFormat,RenderParams> initRenderParams(){
+    QMap<AVPixelFormat,RenderParams> params ;
+    AVRational one = {1,1};
+    AVRational two = {1,2};
+    AVRational three = {1,3};
+    AVRational four = {1,4};
+
+    params[AV_PIX_FMT_YUV420P] = RenderParams(AV_PIX_FMT_YUV420P,one,one,one,one,two,two,one,two,two,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
+    params[AV_PIX_FMT_YUVJ420P] = RenderParams(AV_PIX_FMT_YUVJ420P,one,one,one,one,two,two,one,two,two,GL_LUMINANCE,GL_LUMINANCE,YUVJ,true);
+    params[AV_PIX_FMT_YUV422P] = RenderParams(AV_PIX_FMT_YUV422P,one,one,one,one,one,one,one,one,one,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
+    params[AV_PIX_FMT_YUVJ422P] = RenderParams(AV_PIX_FMT_YUVJ422P,one,one,one,one,one,one,one,one,one,GL_LUMINANCE,GL_LUMINANCE,YUVJ,true);
+    params[AV_PIX_FMT_YUV444P] = RenderParams(AV_PIX_FMT_YUV444P,one,one,one,one,one,one,one,one,one,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
+    params[AV_PIX_FMT_YUVJ444P] = RenderParams(AV_PIX_FMT_YUVJ444P,one,one,one,one,one,one,one,one,one,GL_LUMINANCE,GL_LUMINANCE,YUVJ,true);
+    params[AV_PIX_FMT_GRAY8] = RenderParams(AV_PIX_FMT_GRAY8,one,one,one,one,one,one,one,one,one,GL_LUMINANCE,GL_LUMINANCE,GRAY,true);
+    params[AV_PIX_FMT_UYVY422] = RenderParams(AV_PIX_FMT_UYVY422,four,one,one,one,one,one,one,one,one,GL_RGBA,GL_RGBA,UYVY,false);
+    params[AV_PIX_FMT_YUYV422] = RenderParams(AV_PIX_FMT_YUYV422,four,one,one,one,one,one,one,one,one,GL_RGBA,GL_RGBA,YUYV,false);
+    params[AV_PIX_FMT_BGR24] = RenderParams(AV_PIX_FMT_BGR24,three,one,one,one,one,one,one,one,one,GL_RGB8,GL_BGR,BGR,true);
+    params[AV_PIX_FMT_RGB24] = RenderParams(AV_PIX_FMT_RGB24,three,one,one,one,one,one,one,one,one,GL_RGB8,GL_RGB,RGB,true);
+    params[AV_PIX_FMT_YUV410P] = RenderParams(AV_PIX_FMT_YUV410P,one,four,four,one,four,four,one,four,four,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
+    params[AV_PIX_FMT_YUV411P] = RenderParams(AV_PIX_FMT_YUV411P,one,two,two,one,two,two,one,two,two,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
+    params[AV_PIX_FMT_MONOWHITE] = RenderParams(AV_PIX_FMT_MONOWHITE,one,one,one,one,one,one,one,one,one,GL_RGB8,GL_LUMINANCE,RGB,true);
+    params[AV_PIX_FMT_MONOBLACK] = RenderParams(AV_PIX_FMT_MONOBLACK,one,one,one,one,one,one,one,one,one,GL_RGB8,GL_LUMINANCE,RGB,true);
+    params[AV_PIX_FMT_PAL8] = RenderParams(AV_PIX_FMT_PAL8,one,one,one,one,one,one,one,two,two,GL_LUMINANCE,GL_LUMINANCE,RGB,true);
+
+    params[AV_PIX_FMT_UYYVYY411] = RenderParams(AV_PIX_FMT_UYYVYY411,one,two,two,one,two,two,one,two,two,GL_RGBA,GL_RGBA,UYYVYY,false);
+
+    params[AV_PIX_FMT_BGR8] = RenderParams(AV_PIX_FMT_BGR8,three,one,one,one,one,one,one,one,one,GL_RGB8,GL_BGR,BGR,true);
+    params[AV_PIX_FMT_NV12] = RenderParams(AV_PIX_FMT_NV12,one,one,one,one,one,one,one,two,two,GL_LUMINANCE,GL_LUMINANCE,NV12,false);
+    params[AV_PIX_FMT_NV21] = RenderParams(AV_PIX_FMT_NV21,one,one,one,one,one,one,one,two,two,GL_LUMINANCE,GL_LUMINANCE,NV21,false);
+
+
+    params[AV_PIX_FMT_YUV420P10LE] = RenderParams(AV_PIX_FMT_YUV420P10LE,two, two,two,one,two,two,one,two,two,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+    params[AV_PIX_FMT_YUV444P10LE] = RenderParams(AV_PIX_FMT_YUV444P10LE,two,two,two,one,one,one,one,one,one,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+    return params;
+}
+
+static const QMap<AVPixelFormat,RenderParams> renderParams = initRenderParams();
+
+
 AVRenderer::~AVRenderer()
 {
 //    if(m_buffer != NULL){
@@ -97,29 +136,10 @@ void AVRenderer::init(){
         return;
     if (!m_program) {
         m_program = new QOpenGLShaderProgram;
-        mGLImageFormat = GL_LUMINANCE;
-        switch (m_format.format) {
-        case AV_PIX_FMT_YUV420P:mTextureFormatValue = YUV;mRenderFormet = YUV420P;break;
-        case AV_PIX_FMT_YUVJ420P:mTextureFormatValue = YUVJ;mRenderFormet = YUV420P;break;
-        case AV_PIX_FMT_YUV422P:mTextureFormatValue = YUV;mRenderFormet = YUV422P;break;
-        case AV_PIX_FMT_YUVJ422P:mTextureFormatValue = YUVJ;mRenderFormet = YUV422P;break;
-        case AV_PIX_FMT_YUVJ444P:mTextureFormatValue = YUV;mRenderFormet = YUV444P;break;
-        case AV_PIX_FMT_YUV444P:mTextureFormatValue = YUVJ;mRenderFormet = YUV444P;break;
-        case AV_PIX_FMT_GRAY8:mTextureFormatValue = GRAY;mRenderFormet = GRAY8;break;
-        case AV_PIX_FMT_UYVY422:mTextureFormatValue = UYVY;mRenderFormet = UYVYORYUYV422;mGLImageFormat = GL_RGBA;break;
-        case AV_PIX_FMT_YUYV422:mTextureFormatValue = YUYV;mRenderFormet = UYVYORYUYV422;mGLImageFormat = GL_RGBA;break;
-        case AV_PIX_FMT_BGR24 : mTextureFormatValue = BGR;mRenderFormet = BGR24;mGLImageFormat = GL_BGR;break;
-        case AV_PIX_FMT_RGB24 : mTextureFormatValue = RGB;mRenderFormet = BGR24;mGLImageFormat = GL_RGB;break;
-        case AV_PIX_FMT_YUV420P10LE:mTextureFormatValue = YUV;mRenderFormet = YUV420P;mBitDepth = 10;break;
-        default :mTextureFormatValue = YUV;mRenderFormet = YUV420P;break;
-        }
+        params = renderParams[(AVPixelFormat)m_format.format];
+
         m_program->addShaderFromSourceFile(QOpenGLShader::Vertex,":/video.vert");
-        if(mRenderFormet == YUV420 || mRenderFormet == YUV422 || mRenderFormet == YUV444 || mRenderFormet == UYVYORYUYV422
-                ){
-            m_program->addShaderFromSourceFile(QOpenGLShader::Fragment,":/yuv-packed.frag");
-        }else{
-            m_program->addShaderFromSourceFile(QOpenGLShader::Fragment,":/yuv-planar.frag");
-        }
+        m_program->addShaderFromSourceFile(QOpenGLShader::Fragment,params.isPlanar ? ":/yuv-planar.frag" : ":/yuv-packed.frag");
 
         m_program->link();
         mVertexInLocaltion = m_program->attributeLocation("vertexIn");
@@ -134,6 +154,10 @@ void AVRenderer::init(){
         mTextureFormat = m_program->uniformLocation("tex_format");
         mTextureOffset = m_program->uniformLocation("tex_offset");
         mImageWidthId = m_program->uniformLocation("imageWidth");
+        mImageHeightId = m_program->uniformLocation("imageHeight");
+        mEnableHDRId = m_program->uniformLocation("enableHDR");
+
+
     }
 
     if(!mIsInitTextures){
@@ -143,20 +167,17 @@ void AVRenderer::init(){
         {
             glBindTexture(GL_TEXTURE_2D, textureId[i]);
             int linesize = qAbs(m_format.renderFrame->linesize[i]);
-            if(i == 0 || mRenderFormet == YUV444P){
-                if(mRenderFormet == BGR24)
-                {
-                    glTexImage2D ( GL_TEXTURE_2D, 0, GL_RGB8, m_format.renderFrame->width,m_format.renderFrame->height, 0, mGLImageFormat, GL_UNSIGNED_BYTE, NULL);
-                }else{
-                    glTexImage2D ( GL_TEXTURE_2D, 0, mGLImageFormat, mRenderFormet == UYVYORYUYV422 ? linesize / 4 : linesize,m_format.renderFrame->height, 0, mGLImageFormat, GL_UNSIGNED_BYTE, NULL);
-                }
-            }else{
-                glTexImage2D ( GL_TEXTURE_2D, 0, mGLImageFormat,linesize ,mRenderFormet == YUV422P ? m_format.renderFrame->height : m_format.renderFrame->height / 2, 0, mGLImageFormat, GL_UNSIGNED_BYTE, NULL);
-            }
+            AVRational widthRational = params.yuvwidths[i];
+            AVRational heightRational = params.yuvheights[i];
+            int width = linesize * widthRational.num / widthRational.den;
+            int height = m_format.renderFrame->height * heightRational.num / heightRational.den;
+//            qDebug() << width << height;
+            glTexImage2D ( GL_TEXTURE_2D, 0, params.internalformat,width ,height, 0, params.glFormat, GL_UNSIGNED_BYTE, NULL);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         }
     }
     mIsInitTextures = true;
@@ -281,7 +302,6 @@ void AVRenderer::paint(){
 
     pboIndex = 0;
 
-    qint64 textureSize = qAbs(m_format.renderFrame->linesize[0])*m_format.renderFrame->height;
     for(int j = 0;j < TEXTURE_NUMBER;j++){
         m_pbo[pboIndex][j].bind();
         glActiveTexture(GL_TEXTURE0 + j);
@@ -290,33 +310,31 @@ void AVRenderer::paint(){
         int linesize = m_format.renderFrame->linesize[j];
         uint8_t * data = m_format.renderFrame->data[j];
         if(data != NULL && linesize != 0){
-            if(j == 0 || mRenderFormet == YUV444P){//y (444的UV数据和Y一样多)
-                if(m_pbo[pboIndex][j].size() != textureSize)
-                    m_pbo[pboIndex][j].allocate(textureSize);
+            qint64 textureSize = qAbs(linesize)*m_format.renderFrame->height;
 
-                if(linesize < 0){
-                    for(int i = 0;i < m_format.renderFrame->height;i++ ){
-                        m_pbo[pboIndex][j].write(i * qAbs(linesize),data + i * linesize,qAbs(linesize));
-                    }
-                }else{
-                    m_pbo[pboIndex][j].write(0,data , textureSize);
-                }
+            textureSize = textureSize * params.yuvsizes[j].num / params.yuvsizes[j].den;
 
-                linesize = qAbs(linesize);
-                if(mRenderFormet == BGR24){
-                    glTexSubImage2D(GL_TEXTURE_2D,0,0,0, linesize / 3 ,m_format.renderFrame->height, mGLImageFormat, GL_UNSIGNED_BYTE, NULL);
-                }else{
-                    glTexSubImage2D(GL_TEXTURE_2D,0,0,0, mRenderFormet == UYVYORYUYV422 ? linesize / 4 : linesize,m_format.renderFrame->height, mGLImageFormat, GL_UNSIGNED_BYTE, NULL);
+            if(m_pbo[pboIndex][j].size() != textureSize)
+                m_pbo[pboIndex][j].allocate(textureSize);
+
+            if(linesize < 0){
+                for(int i = 0;i < m_format.renderFrame->height;i++ ){
+                    m_pbo[pboIndex][j].write(i * qAbs(linesize),data + i * linesize,qAbs(linesize));
                 }
-                m_program->setUniformValue(mTextureOffset, (GLfloat)((linesize - m_format.renderFrame->width) * 1.0 / linesize)); //偏移量
-            }else{//uv
-                int uvsize = mRenderFormet == YUV422P ? textureSize / 2 : textureSize / 4;
-                if(m_pbo[pboIndex][j].size() != uvsize)
-                    m_pbo[pboIndex][j].allocate(uvsize);
-                m_pbo[pboIndex][j].write(0,data , uvsize);
-                linesize = qAbs(linesize);
-                glTexSubImage2D(GL_TEXTURE_2D,0,0,0, linesize,mRenderFormet == YUV422P ? m_format.renderFrame->height : m_format.renderFrame->height / 2, mGLImageFormat, GL_UNSIGNED_BYTE, NULL);
+            }else{
+                m_pbo[pboIndex][j].write(0,data , textureSize);
             }
+            linesize = qAbs(linesize);
+
+
+//            qDebug() << "----------" << linesize << m_format.renderFrame->width << m_format.renderFrame->height << j;
+            if(j == 0){// Y or R
+                m_program->setUniformValue(mTextureOffset, (GLfloat)((linesize - m_format.renderFrame->width) * 1.0 / linesize)); //偏移量
+            }
+            int width = linesize * params.yuvwidths[j].num / params.yuvwidths[j].den;
+            int height = m_format.renderFrame->height * params.yuvheights[j].num / params.yuvheights[j].den;
+//            qDebug() << width << height;
+            glTexSubImage2D(GL_TEXTURE_2D,0,0,0,width,height, params.glFormat, GL_UNSIGNED_BYTE, NULL);
         }
         m_program->setUniformValue(textureLocaltion[j], j);
         m_pbo[pboIndex][j].release();
@@ -337,26 +355,40 @@ void AVRenderer::paint(){
     QMatrix4x4 modelview;
     modelview.rotate(rotate, 0.0f, 0.0f, 1.0f);
     m_program->setUniformValue(matrix,modelview);
-    m_program->setUniformValue(mTextureFormat, (GLfloat)mTextureFormatValue); //纹理格式(YUV,YUVJ,RGB)
+    m_program->setUniformValue(mTextureFormat, (GLfloat)params.textureFormat); //纹理格式(YUV,YUVJ,RGB)
     m_program->setUniformValue(mAlpha, (GLfloat)1.0); //透明度
-    m_program->setUniformValue(mImageWidthId, m_format.width); //图像宽度
+    m_program->setUniformValue(mEnableHDRId, m_output->HDR()); //HDR
 
-
-
-    QColor color = m_output->backgroundColor();
-    glClearColor(color.redF(), color.greenF(), color.blueF(), color.alphaF());
-    glClear(GL_COLOR_BUFFER_BIT);
 
     m_displayRect = m_output->calculateGeometry(rotate == 90 || rotate == 270 ?
                                                 m_format.height : m_format.width,
                                                 rotate == 90 || rotate == 270 ?
                                                 m_format.width : m_format.height);
 
-    glViewport(m_displayRect.x(),m_displayRect.y(),m_displayRect.width(),m_displayRect.height());
+    m_program->setUniformValue(mImageWidthId, m_format.width); //图像宽度
+    m_program->setUniformValue(mImageHeightId, m_format.height); //图像高度
+
+    QColor color = m_output->backgroundColor();
+    glClearColor(color.redF(), color.greenF(), color.blueF(), color.alphaF());
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glEnable(GL_MULTISAMPLE);
+
 
     m_vao->bind();
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    if(m_output->VR()){
+        glViewport(m_displayRect.x(),m_displayRect.y(),m_displayRect.width() / 2,m_displayRect.height());
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        glViewport(m_displayRect.width() / 2,m_displayRect.y(),m_displayRect.width() / 2,m_displayRect.height());
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }else{
+        glViewport(m_displayRect.x(),m_displayRect.y(),m_displayRect.width(),m_displayRect.height());
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    }
     m_vao->release();
+
+
     m_program->release();
     displayFbo->bindDefault();
     m_output->window()->resetOpenGLState(); //重置opengl状态，不然界面上的文字会出现花屏
@@ -376,6 +408,8 @@ AVOutput::AVOutput(QQuickItem *parent)
     , mIsDestroy(false)
     , mBackgroundColor(QColor(255,255,0,255))
     , mReallyFps(0)
+    , mEnableHDR(false)
+    , mEnableVR(false)
 {
 //    setFlag(ItemHasContents);
     connect(&mTimer,SIGNAL(timeout()),this,SLOT(update()));
@@ -434,6 +468,24 @@ void  AVOutput::setReallyFps(int reallyFps){
     emit reallyFpsChanged();
 }
 
+bool AVOutput::HDR(){
+    return mEnableHDR;
+}
+
+void AVOutput::setHDR(bool flag){
+    mEnableHDR = flag;
+    emit hdrModeChanged();
+}
+
+bool AVOutput::VR(){
+    return mEnableVR;
+}
+
+void AVOutput::setVR(bool flag){
+    mEnableVR = flag;
+    emit vrModeChanged();
+}
+
 QColor AVOutput::backgroundColor() const{
     return mBackgroundColor;
 }
@@ -451,6 +503,7 @@ void AVOutput::setOrientation(Orientation orientation){
 }
 
 QRect AVOutput::calculateGeometry(int w,int h){
+//    return QRect(0,0,w,h);
     switch(mFillMode){
         case AVOutput::Stretch : {
             return QRect(0,0,width(),height());
@@ -469,6 +522,7 @@ QRect AVOutput::calculateGeometry(int w,int h){
             return QRect((width() - newWidth ) / 2,(height() - newHeight) / 2,newWidth,newHeight);
         }
     }
+    return QRect(0,0,width(),height());
 }
 
 QQuickFramebufferObject::Renderer *AVOutput::createRenderer() const{

@@ -64,8 +64,8 @@ public :
         frame = av_frame_alloc();
     }
 
-    void release(){
-        if(frame != NULL){
+    void release(bool isUnref){
+        if(frame != NULL && isUnref){
             av_frame_unref(frame);
         }
         pts = AV_NOPTS_VALUE;
@@ -177,7 +177,6 @@ public :
         if(locked)
             mutex.unlock();
     }
-
 };
 
 class AVDecoder : public QObject
@@ -224,6 +223,9 @@ public:
     void decodec();
     void setFilenameImpl(const QString &source);
     void stop();
+
+    void releseCurrentRenderItem();
+    void resetVideoCodecContext();
 private:
 //    void initPacketQueue(PacketQueue *q);
 //    int putPacketQueue(PacketQueue *q, AVPacket *pkt);
@@ -238,6 +240,7 @@ private:
     int getRenderListSize();
     void clearRenderList(bool isDelete = false);
     RenderItem *getInvalidRenderItem();
+    void changeRenderItemSize(int width,int height,AVPixelFormat format);
 private :
     int mAudioIndex;
     int mVideoIndex;
@@ -260,7 +263,7 @@ private :
     AVPacket mPacket;
     AVFrame
             *mAudioFrame,
-            *mFrameYUV,
+            *reciveFrame,
             *mHWFrame; //硬解BUFFER
     QVector<RenderItem *> mRenderList; //渲染队列
     int maxRenderListSize; //渲染队列最大数量
@@ -270,7 +273,6 @@ private :
 
 
     int mFrameIndex; //使用的
-    uint8_t *mYUVBuffer;
 
     QString mFilename;
 

@@ -16,6 +16,88 @@
 #include <QQuickWindow>
 #include <QTimer>
 
+enum TextureFormat{
+    YUV = 0,
+    YUVJ = 1,
+    RGB = 2,
+    GRAY = 3,
+    YUYV = 4,
+    UYVY = 5 ,
+    BGR = 6,
+    UYYVYY = 7,
+    NV12 = 8 ,
+    NV21 = 9 ,
+    YUV420P10LE = 10,
+};
+
+class RenderParams{
+public :
+    RenderParams(AVPixelFormat f,AVRational yw,AVRational uw,AVRational vw,AVRational yh,AVRational uh,AVRational vh,AVRational y,AVRational u,AVRational v,GLint f1,GLenum f2,int f3,bool planar)
+        : format(f)
+        , yWidth(yw)
+        , uWidth(uw)
+        , vWidth(vw)
+
+        , yHeight(yh)
+        , uHeight(uh)
+        , vHeight(vh)
+
+        , ySize(y)
+        , uSize(u)
+        , vSize(v)
+
+        , internalformat(f1)
+        , glFormat(f2)
+        , textureFormat(f3)
+
+        , isPlanar(planar){
+
+        yuvsizes[0] = ySize;
+        yuvsizes[1] = uSize;
+        yuvsizes[2] = vSize;
+
+        yuvwidths[0] = yWidth;
+        yuvwidths[1] = uWidth;
+        yuvwidths[2] = vWidth;
+
+        yuvheights[0] = yHeight;
+        yuvheights[1] = uHeight;
+        yuvheights[2] = vHeight;
+    }
+
+    RenderParams():RenderParams(AV_PIX_FMT_YUV420P,{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},0,0,0,false){}
+    RenderParams (const RenderParams &r)
+        : RenderParams(r.format,r.yWidth,r.uWidth,r.vWidth,r.yHeight,r.uHeight,r.vHeight,r.ySize,r.uSize,r.vSize,
+                       r.internalformat,r.glFormat,r.textureFormat,r.isPlanar)
+    {
+    }
+
+    AVPixelFormat format;
+
+    AVRational yWidth; //y的宽度(比率)
+    AVRational uWidth; //u的宽度(比率)
+    AVRational vWidth; //v的宽度(比率)
+
+    AVRational yHeight; //y的高度(比率)
+    AVRational uHeight; //u的高度(比率)
+    AVRational vHeight; //v的高度(比率)
+
+    AVRational ySize;// y的大小(比率)
+    AVRational uSize;// u的大小(比率)
+    AVRational vSize;// v的大小(比率)
+
+    GLint internalformat; //数据位数
+    GLenum glFormat; //
+
+    int textureFormat; //自定义纹理格式，GL使用
+
+    bool isPlanar; //是否是平面 true : 平面 | false : 打包
+
+    AVRational yuvsizes[3];
+    AVRational yuvwidths[3];
+    AVRational yuvheights[3];
+};
+
 class AVOutput : public QQuickFramebufferObject
 {
     Q_OBJECT
@@ -25,6 +107,8 @@ class AVOutput : public QQuickFramebufferObject
     Q_PROPERTY(int reallyFps READ reallyFps WRITE setReallyFps NOTIFY reallyFpsChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged)
     Q_PROPERTY(Orientation orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
+    Q_PROPERTY(bool hdrMode READ HDR WRITE setHDR NOTIFY hdrModeChanged)
+    Q_PROPERTY(bool vrMode READ VR WRITE setVR NOTIFY vrModeChanged)
 
     Q_ENUMS(FillMode)
     Q_ENUMS(Orientation)
@@ -65,6 +149,12 @@ public:
     QObject *source() const;
     void setSource(QObject *source);
 
+    bool HDR();
+    void setHDR(bool flag);
+
+    bool VR();
+    void setVR(bool flag);
+
     QRect calculateGeometry(int,int);
 public slots:
     void playStatusChanged();
@@ -78,6 +168,8 @@ signals :
     void reallyFpsChanged();
     void backgroundColorChanged();
     void orientationChanged();
+    void hdrModeChanged();
+    void vrModeChanged();
 
     void updateVideoFrame(VideoFormat*);
 private :
@@ -91,44 +183,14 @@ private :
     bool mIsDestroy;
     int mFps;
     int mReallyFps;
+    bool mEnableHDR;
+    bool mEnableVR;
 };
 
 
 class AVRenderer : public QObject , protected QOpenGLFunctions , public QQuickFramebufferObject::Renderer{
     Q_OBJECT
 public:
-    enum RenderFormat{
-        UNKONW = -1 ,
-        YUV410P ,
-        YUV411P ,
-        YUV420P ,
-        YUV422P ,
-        YUV444P ,
-
-        YUV410 ,
-        YUV411 ,
-        YUV420 ,
-        YUV422 ,
-        YUV444 ,
-
-        GRAY8 ,
-
-        UYVYORYUYV422 ,
-
-        BGR24 ,
-
-    };
-
-    enum TextureFormat{
-        YUV = 0,
-        YUVJ = 1,
-        RGB = 2,
-        GRAY = 3,
-        YUYV = 4,
-        UYVY = 5 ,
-        BGR = 6,
-    };
-
     AVRenderer(AVOutput *output)
         : m_program(NULL)
         , m_renderFbo(NULL)
@@ -142,9 +204,7 @@ public:
         , mIsInitPbo(false)
         , mIsNeedNewUpdate(false)
         , mIsInitTextures(false)
-        , mRenderFormet(AVRenderer::UNKONW)
         , mForceUpdate(true)
-        , mBitDepth(0)
     {
 //        m_format.width = 0;
 //        m_format.height = 0;
@@ -186,9 +246,9 @@ private:
     int mTextureFormatValue;
     int mTextureOffset;
     int mImageWidthId;
+    int mImageHeightId;
+    int mEnableHDRId;
     int pboIndex;
-    int mBitDepth; //位深度
-
     VideoFormat m_format;
     QMutex mDataMutex;
     AVOutput *m_output;
@@ -200,9 +260,9 @@ private:
     bool mIsInitPbo;
     bool mIsNeedNewUpdate;
     bool mIsInitTextures;
-    RenderFormat mRenderFormet;
+
     bool mForceUpdate; //强制更新
 
-    int mGLImageFormat; //图像格式 GL_RGBA GL_LUMINANCE
+    RenderParams params;
 };
 #endif // AVOUTPUT_H
