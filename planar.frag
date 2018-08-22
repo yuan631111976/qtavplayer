@@ -23,20 +23,23 @@ vec3 toHDR(in vec3 colour, in float range) { return toLinear(colour) * range; }
 
 void main()
 {
+    if(textureOut.x > 1.0 - tex_offset){
+        return;
+    }
     vec3 yuv;
     vec4 rgba;
     if(tex_format == 0 || tex_format == 1){
         if(tex_format == 0){
-            yuv.r = texture2D(tex_y, textureOut - tex_offset).r - 0.0625;
+            yuv.r = texture2D(tex_y, textureOut).r - 0.0625;
         }else{
-            yuv.r = texture2D(tex_y, textureOut - tex_offset).r;
+            yuv.r = texture2D(tex_y, textureOut).r;
         }
-        yuv.g = texture2D(tex_u, textureOut - tex_offset).r - 0.5;
-        yuv.b = texture2D(tex_v, textureOut - tex_offset).r - 0.5;
+        yuv.g = texture2D(tex_u, textureOut).r - 0.5;
+        yuv.b = texture2D(tex_v, textureOut).r - 0.5;
     }else if(tex_format == 2){ // rgb
         yuv = texture2D(tex_y, textureOut).rgb;
     }else if(tex_format == 3){ // gray8
-        yuv.r = texture2D(tex_y, textureOut - tex_offset).r;
+        yuv.r = texture2D(tex_y, textureOut).r;
     }else if(tex_format == 6){ //BGR
         yuv = texture2D(tex_y, textureOut).bgr;
     }else if(tex_format == 10){//yuv420p10le yuv444p10le
@@ -49,15 +52,33 @@ void main()
         yuv_l.z = texture2D(tex_v, textureOut).r;
         yuv_h.z = texture2D(tex_v, textureOut).a;
         yuv = (yuv_l * 255.0 + yuv_h * 255.0 * 256.0) / (1023.0) - vec3(16.0 / 255.0, 0.5, 0.5);
+    }else if(tex_format == 8 || tex_format == 9){ //NV12 | NV21
+        yuv.r = texture2D(tex_y, textureOut).r - 0.0625;
+        vec4 uv = texture2D( tex_u, textureOut);
+        if(tex_format == 9){ //NV21
+            yuv.g = uv.a - 0.5;
+            yuv.b = uv.r - 0.5;
+        }else{ //NV12
+            yuv.g = uv.r - 0.5;
+            yuv.b = uv.a - 0.5;
+        }
+    }else if(tex_format == 16 || tex_format == 17){ //YUV16 YUVJ16
+        if(tex_format == 16){
+            yuv.r = texture2D(tex_y, textureOut).r - 0.0625;
+        }else{
+            yuv.r = texture2D(tex_y, textureOut).r;
+        }
+        yuv.g = texture2D(tex_u, textureOut).r - 0.5;
+        yuv.b = texture2D(tex_v, textureOut).r - 0.5;
     }
 
 
 
-    if(tex_format == 0 || tex_format == 10){//yuv | p10le
+    if(tex_format == 0 || tex_format == 10 || tex_format == 16){//yuv | p10le | //YUV16
         rgba.r = yuv.r + 1.596 * yuv.b;
         rgba.g = yuv.r - 0.813 * yuv.b - 0.391 * yuv.g;
         rgba.b = yuv.r + 2.018 * yuv.g;
-    }else if(tex_format == 1){ //yuy-jpeg
+    }else if(tex_format == 1 || tex_format == 17){ //yuy-jpeg || YUVJ16
         rgba.r = yuv.r + 1.402 * yuv.b;
         rgba.g = yuv.r - 0.34413 * yuv.g - 0.71414 * yuv.b;
         rgba.b = yuv.r + 1.772 * yuv.g;
@@ -72,6 +93,10 @@ void main()
         rgba.r = yuv.b;
         rgba.g = yuv.g;
         rgba.b = yuv.r;
+    }else{ //其它
+        rgba.r = yuv.r + 1.596 * yuv.b;
+        rgba.g = yuv.r - 0.813 * yuv.b - 0.391 * yuv.g;
+        rgba.b = yuv.r + 2.018 * yuv.g;
     }
     rgba.a = alpha;
     if(enableHDR){

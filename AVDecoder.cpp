@@ -17,6 +17,66 @@ int64_t seekPacket(void *opaque, int64_t offset, int whence){
     return 0;
 }
 
+/******************************************
+   *
+   * Convert 32 bit float to a 4 byte array
+   */
+static unsigned char * FloatToByteArray(float f)
+{
+    static unsigned char p[4];
+    unsigned char * x = reinterpret_cast<unsigned char *>(&f);
+    for (int i = 0; i < 4; ++i)
+    {
+        p[i] = x[i];
+    }
+    return p;
+}
+
+static void FloatArrayToByteArray(float f[], int float_count, unsigned char byte_array[])
+{
+    for(int i = 0; i < float_count; i++)
+    {
+        unsigned char * x = reinterpret_cast<unsigned char *>(&f[i]);
+        for (int j = 0; j < 4; ++j)
+        {
+            byte_array[4 * i + j] = x[j];
+        }
+    }
+}
+
+static float ByteArrayToFloat(unsigned char foo[])
+{
+    union test
+    {
+        unsigned char buf[4];
+        float number;
+    }test;
+
+    test.buf[0] = foo[0];
+    test.buf[1] = foo[1];
+    test.buf[2] = foo[2];
+    test.buf[3] = foo[3];
+    return test.number;
+}
+
+static void ByteArrayToFloatArray(unsigned char byte_array[], int byte_count, float float_array[])
+{
+    union test
+    {
+        unsigned char buf[4];
+        float number;
+    }test;
+
+    for(int i=0;i < (byte_count / 4); i++)
+    {
+        test.buf[0] = byte_array[ i * 4 + 0];
+        test.buf[1] = byte_array[ i * 4 + 1];
+        test.buf[2] = byte_array[ i * 4 + 2];
+        test.buf[3] = byte_array[ i * 4 + 3];
+        float_array[i] = test.number;
+    }
+}
+
 static int hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type)
 {
     AVDecoder *opaque = (AVDecoder *) ctx->opaque;
@@ -94,6 +154,7 @@ AVDecoder::AVDecoder()
     , maxRenderListSize(10)
     , mLastRenderItem(NULL)
     , mIsNeedCallRenderFirstFrame(true)
+    , mIsAccompany(false)
 {
 #ifdef LIBAVUTIL_VERSION_MAJOR
 #if (LIBAVUTIL_VERSION_MAJOR < 56)
@@ -152,7 +213,7 @@ void AVDecoder::init(){
         mVideoCodecCtx = avcodec_alloc_context3(mVideoCodec);
         if (!mVideoCodecCtx){
             //qDebug() << "create video context fail!";
-//            qDebug() << "avformat_open_input 3";
+            //            qDebug() << "avformat_open_input 3";
             statusChanged(AVDefine::MediaStatus_InvalidMedia);
         }else{
             avcodec_parameters_to_context(mVideoCodecCtx, mFormatCtx->streams[mVideoIndex]->codecpar);
@@ -197,13 +258,13 @@ void AVDecoder::init(){
     if(mCallback){
         mCallback->mediaDurationChanged(mFormatCtx->duration / 1000);
     }
-//    qDebug() << "DURATION time : " <<mFormatCtx->duration / 1000;
+    //    qDebug() << "DURATION time : " <<mFormatCtx->duration / 1000;
 
     /* 寻找音频流 */
     ret = av_find_best_stream(mFormatCtx, AVMEDIA_TYPE_AUDIO, -1, -1, &mAudioCodec, 0);
     if (ret < 0) {
         //qDebug() << "Cannot find a audio stream in the input file";
-//        statusChanged(AVDefine::MediaStatus_InvalidMedia);
+        //        statusChanged(AVDefine::MediaStatus_InvalidMedia);
     }else{
         mAudioIndex = ret;
 
@@ -231,8 +292,8 @@ void AVDecoder::init(){
         }
     }
 
-//    mIsOpenAudioCodec = false;
-//    mIsOpenVideoCodec = false;
+    //    mIsOpenAudioCodec = false;
+    //    mIsOpenVideoCodec = false;
     if(!mIsOpenVideoCodec && !mIsOpenAudioCodec){ //如果即没有音频，也没有视频，则通知状态无效
         statusChanged(AVDefine::MediaStatus_InvalidMedia);
         release();//释放所有资源
@@ -252,7 +313,7 @@ void AVDecoder::init(){
         vFormat.format = mVideoCodecCtx->pix_fmt;
 
 
-//        qDebug() <<"----------------------- : " << mVideoCodecCtx->pix_fmt << ":" << AV_PIX_FMT_BGR24;
+        //        qDebug() <<"----------------------- : " << mVideoCodecCtx->pix_fmt << ":" << AV_PIX_FMT_BGR24;
         switch (mVideoCodecCtx->pix_fmt) {
         case AV_PIX_FMT_YUV420P :
         case AV_PIX_FMT_YUVJ420P :
@@ -266,27 +327,54 @@ void AVDecoder::init(){
         case AV_PIX_FMT_YUV420P10LE :
         case AV_PIX_FMT_BGR24 :
         case AV_PIX_FMT_RGB24 :
-//        case AV_PIX_FMT_YUV410P :
-//        case AV_PIX_FMT_YUV411P :
+        case AV_PIX_FMT_YUV410P :
+        case AV_PIX_FMT_YUV411P :
         case AV_PIX_FMT_MONOWHITE :
         case AV_PIX_FMT_MONOBLACK :
         case AV_PIX_FMT_PAL8 :
-//        case AV_PIX_FMT_UYYVYY411 :
+            //        case AV_PIX_FMT_UYYVYY411 :
         case AV_PIX_FMT_BGR8 :
-//        case AV_PIX_FMT_NV12 :
-//        case AV_PIX_FMT_NV21 :
+        case AV_PIX_FMT_RGB8 :
+//        case AV_PIX_FMT_BGR4 :
+//        case AV_PIX_FMT_BGR4_BYTE :
+//        case AV_PIX_FMT_RGB4 :
+//        case AV_PIX_FMT_RGB4_BYTE :
+        case AV_PIX_FMT_NV12 :
+        case AV_PIX_FMT_NV21 :
+        case AV_PIX_FMT_ARGB :
+        case AV_PIX_FMT_RGBA :
+        case AV_PIX_FMT_ABGR :
+        case AV_PIX_FMT_BGRA :
+//        case AV_PIX_FMT_GRAY16BE :
+        case AV_PIX_FMT_GRAY16LE :
+        case AV_PIX_FMT_YUV440P :
+        case AV_PIX_FMT_YUVJ440P :
+        case AV_PIX_FMT_YUVA420P :
+
+//        case AV_PIX_FMT_RGB444LE :
+//        case AV_PIX_FMT_RGB444BE :
+//        case AV_PIX_FMT_BGR444LE :
+//        case AV_PIX_FMT_BGR444BE :
+
+         case AV_PIX_FMT_YUV420P16LE :
+//         case AV_PIX_FMT_YUV420P16BE :
+         case AV_PIX_FMT_YUV422P16LE :
+//         case AV_PIX_FMT_YUV422P16BE :
+         case AV_PIX_FMT_YUV444P16LE :
+//         case AV_PIX_FMT_YUV444P16BE :
+
         case AV_PIX_FMT_YUV444P10LE :
             break;
         default: //AV_PIX_FMT_YUV420P  如果上面的格式不支持直接渲染，则转换成通用AV_PIX_FMT_YUV420P格式
             vFormat.format = AV_PIX_FMT_YUV420P;
             mVideoSwsCtx = sws_getContext(
-                mVideoCodecCtx->width,
-                mVideoCodecCtx->height,
-                mVideoCodecCtx->pix_fmt,
-                mVideoCodecCtx->width,
-                mVideoCodecCtx->height,
-                (AVPixelFormat)vFormat.format,
-                SWS_BICUBIC,NULL,NULL,NULL);
+                        mVideoCodecCtx->width,
+                        mVideoCodecCtx->height,
+                        mVideoCodecCtx->pix_fmt,
+                        mVideoCodecCtx->width,
+                        mVideoCodecCtx->height,
+                        (AVPixelFormat)vFormat.format,
+                        SWS_BICUBIC,NULL,NULL,NULL);
             reciveFrame = av_frame_alloc();
             changeRenderItemSize(mVideoCodecCtx->width,mVideoCodecCtx->height,(AVPixelFormat)vFormat.format);
             break;
@@ -357,48 +445,53 @@ void AVDecoder::init(){
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
 }
 
+/** 设置是否启用硬用 */
+void AVDecoder::setHWDecodec(bool enable){
+
+}
+
 void AVDecoder::release(bool isDeleted){
-//    qDebug() << "-----------------1";
+    //    qDebug() << "-----------------1";
     if(mFormatCtx != NULL){
         avformat_close_input(&mFormatCtx);
         avformat_free_context(mFormatCtx);
         mFormatCtx = NULL;
     }
-//    qDebug() << "-----------------2";
+    //    qDebug() << "-----------------2";
     if(mAudioCodecCtx != NULL){
         avcodec_close(mAudioCodecCtx);
         avcodec_free_context(&mAudioCodecCtx);
         mAudioCodecCtx = NULL;
     }
-//    qDebug() << "-----------------3";
+    //    qDebug() << "-----------------3";
     if(mVideoCodecCtx != NULL){
         avcodec_close(mVideoCodecCtx);
         avcodec_free_context(&mVideoCodecCtx);
         mVideoCodecCtx = NULL;
     }
-//    qDebug() << "-----------------4";
+    //    qDebug() << "-----------------4";
     if(mAudioCodec != NULL){
         av_free(mAudioCodec);
         mAudioCodec = NULL;
     }
-//    qDebug() << "-----------------5";
+    //    qDebug() << "-----------------5";
     if(mVideoCodec != NULL){
         av_free(mVideoCodec);
         mVideoCodec = NULL;
     }
-//    qDebug() << "-----------------8";
+    //    qDebug() << "-----------------8";
     if(mAudioFrame != NULL){
         av_frame_unref(mAudioFrame);
         av_frame_free(&mAudioFrame);
         mAudioFrame = NULL;
     }
-//    qDebug() << "-----------------9";
+    //    qDebug() << "-----------------9";
     if(reciveFrame != NULL){
         av_frame_unref(reciveFrame);
         av_frame_free(&reciveFrame);
         reciveFrame = NULL;
     }
-//    qDebug() << "-----------------10";
+    //    qDebug() << "-----------------10";
     mIsOpenAudioCodec = false;
     mIsOpenVideoCodec = false;
     mRotate = 0;
@@ -472,13 +565,13 @@ void AVDecoder::decodec(){
         return;
 
     if(mIsSeek){
-//        qDebug() <<"------------- seek";
+        //        qDebug() <<"------------- seek";
         statusChanged(AVDefine::MediaStatus_Seeking);
         av_seek_frame(mFormatCtx,-1,mSeekTime * 1000,AVSEEK_FLAG_BACKWARD);
-//        qDebug() << "------------------- av_seek_frame:" << mVideoCodecCtx->pts_correction_last_pts;
+        //        qDebug() << "------------------- av_seek_frame:" << mVideoCodecCtx->pts_correction_last_pts;
         mIsSeek = false;
-//        mIsVideoSeeked = false;
-//        mIsAudioSeeked = false;
+        //        mIsVideoSeeked = false;
+        //        mIsAudioSeeked = false;
         if(mHasSubtitle)
             mIsSubtitleSeeked = false;
         mIsSeekd = false;
@@ -492,13 +585,13 @@ void AVDecoder::decodec(){
 
     mIsReadFinish = ret < 0;
     if(mIsReadFinish){
-        qDebug() << "--------------------- decoded completed";
+//        qDebug() << "--------------------- decoded completed";
         if(!mIsSeekd){
             mIsSeekd = true;
-//            if(mCallback){
-//                slotRenderNextFrame();
-//                mCallback->mediaCanRenderFirstFrame();
-//            }
+            //            if(mCallback){
+            //                slotRenderNextFrame();
+            //                mCallback->mediaCanRenderFirstFrame();
+            //            }
             statusChanged(AVDefine::MediaStatus_Buffered);
             statusChanged(AVDefine::MediaStatus_Seeked);
             statusChanged(AVDefine::MediaStatus_EndOfMedia);
@@ -511,9 +604,9 @@ void AVDecoder::decodec(){
         return;
     }
 
-//    qDebug() << "------------------------------- decodec:" << pkt.stream_index << ":" << mFormatCtx->streams[pkt.stream_index]->codec->codec_type;
+    //    qDebug() << "------------------------------- decodec:" << pkt.stream_index << ":" << mFormatCtx->streams[pkt.stream_index]->codec->codec_type;
     if (pkt->stream_index == mVideoIndex && mIsOpenVideoCodec){
-//        qDebug() <<"------------- video";
+        //        qDebug() <<"------------- video";
         mIsVideoLoadedCompleted = false;
         if(!mIsSeekd){
             int currentTime = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * pkt->pts * 1000;
@@ -573,17 +666,69 @@ void AVDecoder::decodec(){
         }
     }
     else if(mFormatCtx->streams[pkt->stream_index]->codec->codec_type == AVMEDIA_TYPE_SUBTITLE){
-//        subtitleq.put(&pkt);
+        //        subtitleq.put(&pkt);
+        /*
+        if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_DVD_SUBTITLE) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_DVD_SUBTITLE");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_DVB_SUBTITLE) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_DVB_SUBTITLE");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_TEXT) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_TEXT");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_XSUB) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_XSUB");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_SSA) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_SSA");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_MOV_TEXT) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_MOV_TEXT");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_HDMV_PGS_SUBTITLE");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_DVB_TELETEXT) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_DVB_TELETEXT");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_SRT) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_SRT");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_MICRODVD) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_MICRODVD");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_EIA_608) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_EIA_608");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_JACOSUB) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_JACOSUB");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_SAMI) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_SAMI");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_REALTEXT) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_REALTEXT");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_SUBVIEWER1) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_SUBVIEWER1");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_SUBVIEWER) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_SUBVIEWER");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_SUBRIP) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_SUBRIP");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_WEBVTT) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_WEBVTT");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_MPL2) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_MPL2");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_VPLAYER) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_VPLAYER");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_PJS) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_PJS");
+        } else if (mFormatCtx->streams[pkt->stream_index]->codec->codec_id == AV_CODEC_ID_ASS) {
+            qDebug("[nativeGetContentInfo] AVMEDIA_TYPE_SUBTITLE = AV_CODEC_ID_ASS");
+        }else{
+            qDebug("AVMEDIA_TYPE_SUBTITLE");
+        }
+
+        qDebug("AVMEDIA_TYPE_SUBTITLE");
+        qDebug() << "AVMEDIA_TYPE_SUBTITLE 222";*/
+
         av_packet_unref(pkt);
         av_freep(pkt);
         pkt = NULL;
         mIsSubtitleSeeked = true;
-        mIsSubtitlePlayed = false;
-//        qDebug() << "------------------------------- AVMEDIA_TYPE_SUBTITLE";
-//        qDebug() << "------------------------------- AVMEDIA_TYPE_SUBTITLE:" << pkt.stream_index << ":" << AVMEDIA_TYPE_SUBTITLE;
+//        mIsSubtitlePlayed = false;
+//                qDebug() << "------------------------------- AVMEDIA_TYPE_SUBTITLE";
+        //        qDebug() << "------------------------------- AVMEDIA_TYPE_SUBTITLE:" << pkt.stream_index << ":" << AVMEDIA_TYPE_SUBTITLE;
     }
     else if(mFormatCtx->streams[pkt->stream_index]->codec->codec_type == AVMEDIA_TYPE_DATA){
-//        qDebug() << "------------------------------- AVMEDIA_TYPE_DATA";
+//                qDebug() << "------------------------------- AVMEDIA_TYPE_DATA";
         av_packet_unref(pkt);
         av_freep(pkt);
         pkt = NULL;
@@ -604,7 +749,7 @@ void AVDecoder::decodec(){
         //判断是否将设定的缓存装满，如果未装满的话，一直循环
         int videoDiffTime = videoq.diffTime(),audioDiffTime = audioq.diffTime();
         if(((videoDiffTime < mBufferSize && mIsOpenVideoCodec && !mIsVideoLoadedCompleted) ||
-                (audioDiffTime < mBufferSize && mIsOpenAudioCodec && !mIsAudioLoadedCompleted))
+            (audioDiffTime < mBufferSize && mIsOpenAudioCodec && !mIsAudioLoadedCompleted))
                 && videoDiffTime < mBufferSize && audioDiffTime < mBufferSize
                 ){//只要有一种流装满，则不继续处理
             mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
@@ -632,11 +777,11 @@ void AVDecoder::decodec(){
 
     int elapsed = mTime.elapsed();
     if(elapsed - mLastTime >= 1000){ //1秒钟
-//        qDebug() << "bytes_read : " << mFormatCtx->pb->bytes_read
-//                 << " pos : " << mFormatCtx->pb->pos
-//                 << " max size : " << mFormatCtx->pb->maxsize
-//                 << " written : " << mFormatCtx->pb->written
-//                 << " download speed : " << (mFormatCtx->pb->pos - mLastPos) / 1024 << "kb/s";
+        //        qDebug() << "bytes_read : " << mFormatCtx->pb->bytes_read
+        //                 << " pos : " << mFormatCtx->pb->pos
+        //                 << " max size : " << mFormatCtx->pb->maxsize
+        //                 << " written : " << mFormatCtx->pb->written
+        //                 << " download speed : " << (mFormatCtx->pb->pos - mLastPos) / 1024 << "kb/s";
         //emit updateInternetSpeed(mFormatCtx->pb->pos - mLastPos > 0 ? mFormatCtx->pb->pos - mLastPos : 0);
         mLastTime = 0;
         mTime.restart();
@@ -684,6 +829,14 @@ void AVDecoder::setPlayRate(float rate){
 
 float AVDecoder::getPlayRate(){
     return this->mPlayRate;
+}
+
+
+bool AVDecoder::getAccompany()const{
+    return mIsAccompany;
+}
+void AVDecoder::setAccompany(bool flag){
+    mIsAccompany = flag;
 }
 
 void AVDecoder::seek(int ms){
@@ -823,19 +976,19 @@ void AVDecoder::slotSeek(int ms){
             astartTime = audioq.startTime();
         }
 
-//        qDebug() << "---------------:" << astartTime << vstartTime;
+        //        qDebug() << "---------------:" << astartTime << vstartTime;
         if(((vstartTime < 1000 && vstartTime >= 0) || !hasVideo())
-            && ((astartTime < 1000 && astartTime >= 0) || !hasAudio())
+                && ((astartTime < 1000 && astartTime >= 0) || !hasAudio())
                 ){
-//            qDebug() << "---------------:MediaStatus_Seeked";
+            //            qDebug() << "---------------:MediaStatus_Seeked";
             statusChanged(AVDefine::MediaStatus_Seeked);
             return;
         }
 
-//        if((vstartTime == astartTime || !hasAudio()) && (vstartTime == ms && hasVideo())){
-//            statusChanged(AVDefine::MediaStatus_Seeked);
-//            return;
-//        }
+        //        if((vstartTime == astartTime || !hasAudio()) && (vstartTime == ms && hasVideo())){
+        //            statusChanged(AVDefine::MediaStatus_Seeked);
+        //            return;
+        //        }
     }
 
     //清除队列
@@ -988,13 +1141,13 @@ void AVDecoder::slotRenderNextFrame(){
         while(avcodec_receive_frame(mVideoCodecCtx, frame) == 0){
             if(mVideoSwsCtx != NULL){ //将不支持的格式进行转换
                 ret = sws_scale(mVideoSwsCtx,
-                          frame->data,
-                          frame->linesize,
-                          0,
-                          frame->height,
+                                frame->data,
+                                frame->linesize,
+                                0,
+                                frame->height,
 
-                          render->frame->data,
-                          render->frame->linesize);
+                                render->frame->data,
+                                render->frame->linesize);
 
                 render->frame->pts = frame->pts;
                 render->frame->width = frame->width;
@@ -1005,8 +1158,8 @@ void AVDecoder::slotRenderNextFrame(){
             if(render->frame->pts != AV_NOPTS_VALUE){
                 render->pts = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * render->frame->pts * 1000;
 
-//                qDebug() <<  mVideoCodecCtx->pts_correction_last_pts << mVideoCodecCtx->pts_correction_last_dts << mVideoCodecCtx->frame_number;
-//                qDebug() << "-----------render->pts : " << render->pts << pkt->pts << render->frame->pts;
+                //                qDebug() <<  mVideoCodecCtx->pts_correction_last_pts << mVideoCodecCtx->pts_correction_last_dts << mVideoCodecCtx->frame_number;
+                //                qDebug() << "-----------render->pts : " << render->pts << pkt->pts << render->frame->pts;
                 render->valid = true;
                 render->isRendered = false;
             }else{
@@ -1044,7 +1197,7 @@ void AVDecoder::slotRenderNextFrame(){
             mIsVideoPlayed = true;
         }
         if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
-//            qDebug() << "--------------- 播放完成B";
+            //            qDebug() << "--------------- 播放完成B";
             emit statusChanged(AVDefine::MediaStatus_Played);
         }
     }
@@ -1062,6 +1215,7 @@ void AVDecoder::slotRenderNextFrame(){
         }
     }
 }
+
 
 void AVDecoder::slotRequestAudioNextFrame(int len){
     if(!mIsInit)
@@ -1091,13 +1245,13 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
                     break;
 
                 else if (ret < 0){
-//                    qDebug() << "Error during decoding";
+                    //                    qDebug() << "Error during decoding";
                     break;
                 }
 
                 int dataSize = av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
                 if (dataSize < 0) {
-//                    qDebug() << "Failed to calculate data size";
+                    //                    qDebug() << "Failed to calculate data size";
                     break;
                 }
 
@@ -1111,7 +1265,7 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
                             mAudioSwrCtx,
                             &mAudioDstData,
                             outsize,
-                           (const uint8_t**)mAudioFrame->data,
+                            (const uint8_t**)mAudioFrame->data,
                             mAudioFrame->nb_samples
                             );
 
@@ -1145,12 +1299,30 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
         mAudioBuffer.remove(0,len);
         mAudioBufferMutex.unlock();
         if(mCallback){
+            if(mIsAccompany){ //伴唱
+                float *floatArray = new float[r.size() >> 2];
+                float *outFloatArray = new float[r.size() >> 2];
+                ByteArrayToFloatArray((uint8_t*)r.data(),r.size(),floatArray);
+                AVAudioEffect::removeVoice(floatArray,outFloatArray,r.size() >> 2,mSourceAudioFormat.channelCount());
+                FloatArrayToByteArray(outFloatArray,r.size() >> 2,(uint8_t*)r.data());
+                delete [] floatArray;
+                delete [] outFloatArray;
+            }
+
+//            float *floatArray = new float[r.size() >> 2];
+//            float *outFloatArray = new float[r.size() >> 2];
+//            ByteArrayToFloatArray((uint8_t*)r.data(),r.size(),floatArray);
+//            AVAudioEffect::girl(floatArray,r.size() >> 2,outFloatArray,mSourceAudioFormat.sampleRate());
+//            FloatArrayToByteArray(outFloatArray,r.size() >> 2,(uint8_t*)r.data());
+//            delete [] floatArray;
+//            delete [] outFloatArray;
+
             mCallback->mediaUpdateAudioFrame(r);
         }
     }
 
     if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
-//        qDebug() << "--------------- 播放完成C:" << audioq.size() << videoq.size() << getRenderListSize();
+        //        qDebug() << "--------------- 播放完成C:" << audioq.size() << videoq.size() << getRenderListSize();
         emit statusChanged(AVDefine::MediaStatus_Played);
     }
 }
@@ -1180,7 +1352,7 @@ int AVDecoder::requestRenderNextFrame(){
             }
             item->mutex.unlock();
         }
-//        qDebug() << "------------- "<< render;
+        //        qDebug() << "------------- "<< render;
         if(render != NULL){
             if(mCallback){
                 if(mHWFrame == NULL){
@@ -1217,7 +1389,7 @@ int AVDecoder::requestRenderNextFrame(){
         }
     }
     if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
-//        qDebug() << "--------------- 播放完成A";
+        //        qDebug() << "--------------- 播放完成A";
         emit statusChanged(AVDefine::MediaStatus_Played);
     }
     return time;

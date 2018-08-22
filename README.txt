@@ -48,8 +48,24 @@ note : 如果需要替换ffmpeg库，直接替换libs/lib下面的库和libs/inc
         AV_PIX_FMT_YUV420P10LE
         AV_PIX_FMT_BGR24
         AV_PIX_FMT_RGB24
+        AV_PIX_FMT_YUV410P
+        AV_PIX_FMT_YUV411P
         AV_PIX_FMT_MONOWHITE
         AV_PIX_FMT_MONOBLACK
         AV_PIX_FMT_PAL8
         AV_PIX_FMT_BGR8
+        AV_PIX_FMT_RGB8
+        AV_PIX_FMT_NV12
+        AV_PIX_FMT_NV21
+        AV_PIX_FMT_ARGB
+        AV_PIX_FMT_RGBA
+        AV_PIX_FMT_ABGR
+        AV_PIX_FMT_BGRA
+        AV_PIX_FMT_GRAY16LE
+        AV_PIX_FMT_YUV440P
+        AV_PIX_FMT_YUVJ440P
+        AV_PIX_FMT_YUVA420P
+        AV_PIX_FMT_YUV420P16LE
+        AV_PIX_FMT_YUV422P16LE
+        AV_PIX_FMT_YUV444P16LE
         AV_PIX_FMT_YUV444P10LE

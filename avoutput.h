@@ -28,11 +28,18 @@ enum TextureFormat{
     NV12 = 8 ,
     NV21 = 9 ,
     YUV420P10LE = 10,
+    BGR8 = 11,
+    RGBA = 12 ,
+    ARGB = 13 ,
+    ABGR = 14 ,
+    BGRA = 15 ,
+    YUV16 = 16,
+    YUVJ16 = 17,
 };
 
 class RenderParams{
 public :
-    RenderParams(AVPixelFormat f,AVRational yw,AVRational uw,AVRational vw,AVRational yh,AVRational uh,AVRational vh,AVRational y,AVRational u,AVRational v,GLint f1,GLenum f2,int f3,bool planar)
+    RenderParams(AVPixelFormat f,AVRational yw,AVRational uw,AVRational vw,AVRational yh,AVRational uh,AVRational vh,AVRational y,AVRational u,AVRational v,GLint yf1,GLenum yf2,GLint uf1,GLenum uf2,GLint vf1,GLenum vf2,int f3,bool planar,GLenum dataType = GL_UNSIGNED_BYTE)
         : format(f)
         , yWidth(yw)
         , uWidth(uw)
@@ -46,11 +53,17 @@ public :
         , uSize(u)
         , vSize(v)
 
-        , internalformat(f1)
-        , glFormat(f2)
+        , yInternalformat(yf1)
+        , uInternalformat(uf1)
+        , vInternalformat(vf1)
+        , yGlFormat(yf2)
+        , uGlFormat(uf2)
+        , vGlFormat(vf2)
         , textureFormat(f3)
 
-        , isPlanar(planar){
+        , isPlanar(planar)
+        , dataType(dataType)
+    {
 
         yuvsizes[0] = ySize;
         yuvsizes[1] = uSize;
@@ -63,12 +76,28 @@ public :
         yuvheights[0] = yHeight;
         yuvheights[1] = uHeight;
         yuvheights[2] = vHeight;
+
+        yuvInternalformat[0] = yInternalformat;
+        yuvInternalformat[1] = uInternalformat;
+        yuvInternalformat[2] = vInternalformat;
+
+        yuvGlFormat[0] = yGlFormat;
+        yuvGlFormat[1] = uGlFormat;
+        yuvGlFormat[2] = vGlFormat;
     }
 
+    RenderParams(AVPixelFormat f,AVRational yw,AVRational uw,AVRational vw,AVRational yh,AVRational uh,AVRational vh,AVRational y,AVRational u,AVRational v,GLint f1,GLenum f2,int f3,bool planar,GLenum dataType = GL_UNSIGNED_BYTE): RenderParams(f,yw,uw,vw,yh,uh,vh,y,u,v,f1,f2,f1,f2,f1,f2,f3,planar,dataType){}
     RenderParams():RenderParams(AV_PIX_FMT_YUV420P,{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},{1,1},0,0,0,false){}
     RenderParams (const RenderParams &r)
-        : RenderParams(r.format,r.yWidth,r.uWidth,r.vWidth,r.yHeight,r.uHeight,r.vHeight,r.ySize,r.uSize,r.vSize,
-                       r.internalformat,r.glFormat,r.textureFormat,r.isPlanar)
+        : RenderParams(r.format,
+                       r.yWidth,r.uWidth,r.vWidth,
+                       r.yHeight,r.uHeight,r.vHeight,
+                       r.ySize,r.uSize,r.vSize,
+                       r.yInternalformat,r.yGlFormat,
+                       r.uInternalformat,r.uGlFormat,
+                       r.vInternalformat,r.vGlFormat,
+                       r.textureFormat,r.isPlanar,
+                       r.dataType)
     {
     }
 
@@ -86,8 +115,13 @@ public :
     AVRational uSize;// u的大小(比率)
     AVRational vSize;// v的大小(比率)
 
-    GLint internalformat; //数据位数
-    GLenum glFormat; //
+    GLint yInternalformat; //数据位数
+    GLint uInternalformat; //数据位数
+    GLint vInternalformat; //数据位数
+
+    GLenum yGlFormat; //
+    GLenum uGlFormat; //
+    GLenum vGlFormat; //
 
     int textureFormat; //自定义纹理格式，GL使用
 
@@ -96,17 +130,21 @@ public :
     AVRational yuvsizes[3];
     AVRational yuvwidths[3];
     AVRational yuvheights[3];
+    GLint yuvInternalformat[3];
+    GLenum yuvGlFormat[3];
+
+    GLenum dataType;
 };
 
 class AVOutput : public QQuickFramebufferObject
 {
     Q_OBJECT
     Q_PROPERTY(QObject* source READ source WRITE setSource NOTIFY sourceChanged)
-    Q_PROPERTY(FillMode fillMode READ fillMode WRITE setFillMode NOTIFY fillModeChanged)
+    Q_PROPERTY(int fillMode READ fillMode WRITE setFillMode NOTIFY fillModeChanged)
     Q_PROPERTY(int fps READ fps WRITE setFps NOTIFY fpsChanged)
     Q_PROPERTY(int reallyFps READ reallyFps WRITE setReallyFps NOTIFY reallyFpsChanged)
     Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY backgroundColorChanged)
-    Q_PROPERTY(Orientation orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
+    Q_PROPERTY(int orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
     Q_PROPERTY(bool hdrMode READ HDR WRITE setHDR NOTIFY hdrModeChanged)
     Q_PROPERTY(bool vrMode READ VR WRITE setVR NOTIFY vrModeChanged)
 
@@ -116,22 +154,8 @@ public:
     AVOutput(QQuickItem *parent = 0);
     ~AVOutput();
 
-    enum FillMode {
-        Stretch , //填满屏幕 ,不保护比例/the image is scaled to fit
-        PreserveAspectFit, //保护缩放比例/the image is scaled uniformly to fit without cropping
-        PreserveAspectCrop //the image is scaled uniformly to fill, cropping if necessary
-    };
-
-    enum Orientation{
-        PrimaryOrientation = Qt::PrimaryOrientation, // default ,rotation 0
-        LandscapeOrientation = Qt::LandscapeOrientation, // rotation 90
-        PortraitOrientation = Qt::PortraitOrientation, // rotation 0
-        InvertedLandscapeOrientation = Qt::InvertedLandscapeOrientation, // 270
-        InvertedPortraitOrientation = Qt::InvertedPortraitOrientation// 180
-    };
-
-    FillMode fillMode() const;
-    void setFillMode(FillMode mode);
+    int fillMode() const;
+    void setFillMode(int mode);
 
     int fps() const;
     void setFps(int);
@@ -143,8 +167,8 @@ public:
     QColor backgroundColor() const;
     void setBackgroundColor(QColor &color);
 
-    Orientation orientation() const;
-    void setOrientation(Orientation orientation);
+    int orientation() const;
+    void setOrientation(int orientation);
 
     QObject *source() const;
     void setSource(QObject *source);
@@ -175,8 +199,8 @@ signals :
 private :
     friend class AVRenderer;
     AVPlayer *mPlayer;
-    FillMode mFillMode;
-    Orientation mOrientation;
+    AVDefine::FillMode mFillMode;
+    AVDefine::Orientation mOrientation;
     QColor mBackgroundColor;
     VideoFormat mFormat;
     QTimer mTimer;
@@ -248,6 +272,8 @@ private:
     int mImageWidthId;
     int mImageHeightId;
     int mEnableHDRId;
+
+
     int pboIndex;
     VideoFormat m_format;
     QMutex mDataMutex;

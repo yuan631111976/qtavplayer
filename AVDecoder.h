@@ -9,6 +9,7 @@
 #include <QTime>
 #include "AVDefine.h"
 #include "AVThread.h"
+#include "AVAudioEffect.h"
 
 
 #include "AVMediaCallback.h"
@@ -209,6 +210,12 @@ public:
     bool isVideoPlayed();
 
     qint64 nextTime();
+
+    bool getAccompany()const;
+    void setAccompany(bool flag);
+
+    /** 设置是否启用硬用 */
+    void setHWDecodec(bool enable);
 public:
     void slotSeek(int ms);
     void slotSetBufferSize(int size);
@@ -342,6 +349,8 @@ private :
     bool mIsSupportHw;
     /** 是否启用硬解 */
     bool mIsEnableHwDecode;
+    /** 是否是伴唱 */
+    bool mIsAccompany;
 
 public :
     /** 任务处理线程 */

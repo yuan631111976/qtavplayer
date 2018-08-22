@@ -377,6 +377,18 @@ void AVPlayer::setMediaBufferMode(int mode){
         mDecoder->setMediaBufferMode(mMediaBufferMode);
 }
 
+bool AVPlayer::getAccompany()const{
+    if(mDecoder)
+        return mDecoder->getAccompany();
+    return false;
+}
+void AVPlayer::setAccompany(bool flag){
+    if(mDecoder){
+        mDecoder->setAccompany(flag);
+        emit accompanyChanged();
+    }
+}
+
 void AVPlayer::mediaUpdateAudioFormat(const QAudioFormat &format){
     QAudioDeviceInfo info(QAudioDeviceInfo::defaultOutputDevice());
     if (!info.isFormatSupported(format)) {

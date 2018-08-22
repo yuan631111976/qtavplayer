@@ -10,6 +10,8 @@ class AVDefine : public QObject{
     Q_ENUMS(MediaError)
     Q_ENUMS(ChannelLayout)
     Q_ENUMS(SynchMode)
+    Q_ENUMS(FillMode)
+    Q_ENUMS(Orientation)
 public :
     /**
  * @brief The MediaStatus enum
@@ -69,6 +71,20 @@ public :
     enum SynchMode{
         AUDIO, //以音频时间为基准，默认
         TIMER //以系统时间为基准
+    };
+
+    enum FillMode {
+        Stretch , //填满屏幕 ,不保护比例/the image is scaled to fit
+        PreserveAspectFit, //保护缩放比例/the image is scaled uniformly to fit without cropping
+        PreserveAspectCrop //the image is scaled uniformly to fill, cropping if necessary
+    };
+
+    enum Orientation{
+        PrimaryOrientation = Qt::PrimaryOrientation, // default ,rotation 0
+        LandscapeOrientation = Qt::LandscapeOrientation, // rotation 90
+        PortraitOrientation = Qt::PortraitOrientation, // rotation 0
+        InvertedLandscapeOrientation = Qt::InvertedLandscapeOrientation, // 270
+        InvertedPortraitOrientation = Qt::InvertedPortraitOrientation// 180
     };
 };
 #endif // AVDEFINE_H

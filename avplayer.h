@@ -30,6 +30,7 @@ class AVPlayer : public QObject , public AVMediaCallback , public AVMediaPlayer 
     Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int bufferSize READ bufferSize WRITE setBufferSize)
     Q_PROPERTY(int bufferMode READ getMediaBufferMode WRITE setMediaBufferMode)
+    Q_PROPERTY(bool accompany READ getAccompany WRITE setAccompany NOTIFY accompanyChanged) //true : 伴唱 | false : 原唱 ，默认为false
 public:
     AVPlayer();
     ~AVPlayer();
@@ -65,6 +66,9 @@ public:
 
     int getMediaBufferMode() const;
     void setMediaBufferMode(int mode);
+
+    bool getAccompany()const;
+    void setAccompany(bool flag);
 
     VideoFormat *getRenderData();
 
@@ -105,6 +109,7 @@ signals :
     void playStatusChanged();
     void updateVideoFrame(VideoFormat*);
     void playCompleted(); //播放完成
+    void accompanyChanged();
 
 public :
     void requestRender();
