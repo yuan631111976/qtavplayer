@@ -35,7 +35,7 @@
 		
 note : 如果需要替换ffmpeg库，直接替换libs/lib下面的库和libs/include的头文件即可 ,windows的动态库放在 libs/lib/win32/下面
 
-目前支持以下格式直接使用OPENGL渲染，其它格式使会转换成YUV420P进行渲染（后期会逐渐增加可直接渲染的格式）:
+目前支持以下格式直接使用OPENGL渲染，其它格式会转换成YUV420P进行渲染（后期会逐渐增加可直接渲染的格式）:
 		AV_PIX_FMT_YUV420P
         AV_PIX_FMT_YUVJ420P
         AV_PIX_FMT_YUV422P
@@ -69,3 +69,6 @@ note : 如果需要替换ffmpeg库，直接替换libs/lib下面的库和libs/inc
         AV_PIX_FMT_YUV422P16LE
         AV_PIX_FMT_YUV444P16LE
         AV_PIX_FMT_YUV444P10LE
+		AV_PIX_FMT_YUVA420P16LE
+		AV_PIX_FMT_YUVA422P16LE
+		AV_PIX_FMT_YUVA444P16LE
