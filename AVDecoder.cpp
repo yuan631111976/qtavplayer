@@ -332,7 +332,7 @@ void AVDecoder::init(){
         case AV_PIX_FMT_MONOWHITE :
         case AV_PIX_FMT_MONOBLACK :
         case AV_PIX_FMT_PAL8 :
-            //        case AV_PIX_FMT_UYYVYY411 :
+        case AV_PIX_FMT_UYYVYY411 :
         case AV_PIX_FMT_BGR8 :
         case AV_PIX_FMT_RGB8 :
 //        case AV_PIX_FMT_BGR4 :
@@ -362,6 +362,22 @@ void AVDecoder::init(){
 //         case AV_PIX_FMT_YUV422P16BE :
          case AV_PIX_FMT_YUV444P16LE :
 //         case AV_PIX_FMT_YUV444P16BE :
+
+//        case AV_PIX_FMT_YUVA420P16BE :
+        case AV_PIX_FMT_YUVA420P16LE :
+//        case AV_PIX_FMT_YUVA422P16BE :
+        case AV_PIX_FMT_YUVA422P16LE :
+//        case AV_PIX_FMT_YUVA444P16BE :
+        case AV_PIX_FMT_YUVA444P16LE :
+
+//        case AV_PIX_FMT_BAYER_BGGR16LE :
+//        case AV_PIX_FMT_BAYER_BGGR16BE :
+//        case AV_PIX_FMT_BAYER_RGGB16LE :
+//        case AV_PIX_FMT_BAYER_RGGB16BE :
+//        case AV_PIX_FMT_BAYER_GBRG16LE :
+//        case AV_PIX_FMT_BAYER_GBRG16BE :
+//        case AV_PIX_FMT_BAYER_GRBG16LE :
+//        case AV_PIX_FMT_BAYER_GRBG16BE :
 
         case AV_PIX_FMT_YUV444P10LE :
             break;

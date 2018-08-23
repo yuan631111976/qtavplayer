@@ -13,6 +13,7 @@ uniform float tex_offset = 0;
 uniform float imageWidth = 0;
 uniform float imageHeight = 0;
 uniform bool enableHDR = false;
+uniform bool enableGaussianBlur = false;
 
 varying vec2 textureOut;
 
@@ -20,10 +21,49 @@ float gamma = 2.2;
 vec3 toLinear(in vec3 colour) { return pow(colour, vec3(gamma)); }
 vec3 toHDR(in vec3 colour, in float range) { return toLinear(colour) * range; }
 
+const float PI = 3.1415926;
+vec4 GaussianBlur(sampler2D tex0, vec2 texCoordinates, float blurAmnt, int passingTurn, float sigma, float numBlurPixelsPerSide)
+{
+    vec4 outputColor;
+    vec2 blurMultiplyVec;
+    if (passingTurn == 0) blurMultiplyVec = vec2(1.0, 0.0);
+    else blurMultiplyVec = vec2(0.0, 1.0);
+
+    // Incremental Gaussian Coefficent Calculation (See GPU Gems 3 pp. 877 - 889)
+    vec3 incrementalGaussian;
+    incrementalGaussian.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    incrementalGaussian.y = exp(-0.5f / (sigma * sigma));
+    incrementalGaussian.z = incrementalGaussian.y * incrementalGaussian.y;
+
+    vec4 avgValue = vec4(0.0, 0.0, 0.0, 0.0);
+    float coefficientSum = 0.0;
+
+    // Take the central sample first...
+    avgValue += texture2D(tex0, texCoordinates ) * incrementalGaussian.x;
+    coefficientSum += incrementalGaussian.x;
+    incrementalGaussian.xy *= incrementalGaussian.yz;
+
+    // Go through the remaining 8 vertical samples (4 on each side of the center)
+    for (float i = 1.0; i <= numBlurPixelsPerSide; i++)
+    {
+        avgValue += texture2D(tex0, texCoordinates  - i * blurAmnt * blurMultiplyVec) * incrementalGaussian.x;
+        avgValue += texture2D(tex0, texCoordinates  + i * blurAmnt * blurMultiplyVec) * incrementalGaussian.x;
+        coefficientSum += 2.0 * incrementalGaussian.x;
+        incrementalGaussian.xy *= incrementalGaussian.yz;
+    }
+
+    outputColor = avgValue / coefficientSum;
+
+    return outputColor;
+}
 
 void main()
 {
     if(textureOut.x > 1.0 - tex_offset){
+        gl_FragColor.a = 0;
+        gl_FragColor.r = 0;
+        gl_FragColor.g = 0;
+        gl_FragColor.b = 0;
         return;
     }
     vec3 yuv;
@@ -93,6 +133,21 @@ void main()
         rgba.r = yuv.b;
         rgba.g = yuv.g;
         rgba.b = yuv.r;
+    }else if(tex_format == 19){ // BGGR
+        vec2 firstRed = vec2(1,1);
+        rgba.r = texture2D(tex_y, textureOut).r;
+        rgba.g = texture2D(tex_u, textureOut).r;
+        rgba.b = texture2D(tex_v, textureOut).r;
+        //        //        BGGR = 19,
+        //        //        RGGB = 20 ,
+        //        //        GRBG = 21 ,
+        //        //        GBRG = 22 ,
+    }else if(tex_format == 20){ //RGGB
+        vec2 firstRed = vec2(0,0);
+    }else if(tex_format == 21){ //GRBG
+        vec2 firstRed = vec2(0,1);
+    }else if(tex_format == 22){ //GBRG
+        vec2 firstRed = vec2(1,0);
     }else{ //其它
         rgba.r = yuv.r + 1.596 * yuv.b;
         rgba.g = yuv.r - 0.813 * yuv.b - 0.391 * yuv.g;
@@ -104,4 +159,13 @@ void main()
     }
     rgba.a = alpha;
     gl_FragColor = rgba;
+
+//    sampler2D tex0, vec2 texCoordinates, float blurAmnt, int passingTurn, float sigma, float numBlurPixelsPerSide
+    if(enableGaussianBlur)//        
+    {
+        gl_FragColor *= GaussianBlur(tex_y, textureOut, 0, 1, 1, 9);
+    }
+    else{
+//        gl_FragColor.a = 0.5;
+    }
 }
