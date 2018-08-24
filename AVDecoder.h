@@ -216,6 +216,12 @@ public:
 
     /** 设置是否启用硬用 */
     void setHWDecodec(bool enable);
+
+    /** 显示指定位置的帧 */
+    void showFrameByPosition(int time);
+
+    /** 是否是预览 */
+    GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(preview,bool)
 public:
     void slotSeek(int ms);
     void slotSetBufferSize(int size);
@@ -228,6 +234,7 @@ public:
     void init();
     void release(bool isDeleted = false);
     void decodec();
+    void showFrameByPositionImpl(int time);
     void setFilenameImpl(const QString &source);
     void stop();
 
@@ -378,6 +385,7 @@ public :
         AVCodecTaskCommand_Decodec ,
         AVCodecTaskCommand_SetFileName ,
         AVCodecTaskCommand_DecodeToRender,
+        AVCodecTaskCommand_ShowFrameByPosition,
     };
     AVCodecTask(AVDecoder *codec,AVCodecTaskCommand command,double param = 0,QString param2 = ""):
         mCodec(codec),command(command),param(param),param2(param2){}

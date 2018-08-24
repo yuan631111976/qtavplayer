@@ -103,6 +103,34 @@ static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,
     qDebug() << "Failed to get HW surface format.\n";
     return AV_PIX_FMT_NONE;
 }
+
+static int lockmgr(void **mtx, enum AVLockOp op)
+{
+   switch(op) {
+      case AV_LOCK_CREATE:{
+           QMutex *mutex = new QMutex;
+           *mtx = mutex;
+           return 0;
+      }
+      case AV_LOCK_OBTAIN:{
+           QMutex *mutex = (QMutex*)*mtx;
+           mutex->lock();
+           return 0;
+       }
+      case AV_LOCK_RELEASE:{
+           QMutex *mutex = (QMutex*)*mtx;
+           mutex->unlock();
+           return 0;
+      }
+      case AV_LOCK_DESTROY:{
+           QMutex *mutex = (QMutex*)*mtx;
+           delete mutex;
+           return 0;
+      }
+   }
+   return 1;
+}
+
 AVDecoder::AVDecoder()
     : mAudioIndex(-1)
     , mVideoIndex(-1)
@@ -166,6 +194,7 @@ AVDecoder::AVDecoder()
 #endif
 
     av_log_set_callback(NULL);//不打印日志
+    av_lockmgr_register(lockmgr);
 
 
     audioq.release();
@@ -261,32 +290,35 @@ void AVDecoder::init(){
     //    qDebug() << "DURATION time : " <<mFormatCtx->duration / 1000;
 
     /* 寻找音频流 */
-    ret = av_find_best_stream(mFormatCtx, AVMEDIA_TYPE_AUDIO, -1, -1, &mAudioCodec, 0);
-    if (ret < 0) {
-        //qDebug() << "Cannot find a audio stream in the input file";
-        //        statusChanged(AVDefine::MediaStatus_InvalidMedia);
-    }else{
-        mAudioIndex = ret;
 
-        /* create decoding context */
-        mAudioCodecCtx = avcodec_alloc_context3(mAudioCodec);
-        if (!mAudioCodecCtx){
-            statusChanged(AVDefine::MediaStatus_InvalidMedia);
-            //qDebug() << "create audio context fail!";
+    if(!getpreview()){
+        ret = av_find_best_stream(mFormatCtx, AVMEDIA_TYPE_AUDIO, -1, -1, &mAudioCodec, 0);
+        if (ret < 0) {
+            //qDebug() << "Cannot find a audio stream in the input file";
+            //        statusChanged(AVDefine::MediaStatus_InvalidMedia);
         }else{
-            avcodec_parameters_to_context(mAudioCodecCtx, mFormatCtx->streams[mAudioIndex]->codecpar);
-            mIsOpenAudioCodec = true;
-            mAudioCodecCtx->thread_count = 0;
-            if(avcodec_open2(mAudioCodecCtx, mAudioCodec, NULL) < 0)
-            {
-                //qDebug() << "can't open audio codec";
-                statusChanged(AVDefine::MediaStatus_InvalidMedia);
-                mIsOpenAudioCodec = false;
-            }
+            mAudioIndex = ret;
 
-            if(mIsOpenAudioCodec){
-                if(mCallback){
-                    mCallback->mediaHasAudioChanged();
+            /* create decoding context */
+            mAudioCodecCtx = avcodec_alloc_context3(mAudioCodec);
+            if (!mAudioCodecCtx){
+                statusChanged(AVDefine::MediaStatus_InvalidMedia);
+                //qDebug() << "create audio context fail!";
+            }else{
+                avcodec_parameters_to_context(mAudioCodecCtx, mFormatCtx->streams[mAudioIndex]->codecpar);
+                mIsOpenAudioCodec = true;
+                mAudioCodecCtx->thread_count = 0;
+                if(avcodec_open2(mAudioCodecCtx, mAudioCodec, NULL) < 0)
+                {
+                    //qDebug() << "can't open audio codec";
+                    statusChanged(AVDefine::MediaStatus_InvalidMedia);
+                    mIsOpenAudioCodec = false;
+                }
+
+                if(mIsOpenAudioCodec){
+                    if(mCallback){
+                        mCallback->mediaHasAudioChanged();
+                    }
                 }
             }
         }
@@ -571,6 +603,116 @@ void AVDecoder::release(bool isDeleted){
     clearRenderList(isDeleted);
 }
 
+void AVDecoder::showFrameByPositionImpl(int time){
+    AVFormatContext *formatCtx = NULL;
+    AVCodec *videoCodec = NULL;
+    AVCodecContext *videoCodecCtx = NULL;
+    int videoIndex = -1;
+    int rotate = 0;
+    struct SwsContext *videoSwsCtx = NULL; //视频参数转换上下文
+
+    if(avformat_open_input(&formatCtx, mFilename.toStdString().c_str(), NULL, NULL) != 0)
+    {
+        return;
+    }
+
+    if(avformat_find_stream_info(formatCtx, NULL) < 0)
+    {
+        return;
+    }
+
+    /* 寻找视频流 */
+    int ret = av_find_best_stream(formatCtx, AVMEDIA_TYPE_VIDEO, -1, -1, &videoCodec, 0);
+    if (ret >= 0){
+        videoIndex = ret;
+        videoCodecCtx = avcodec_alloc_context3(videoCodec);
+        if (!videoCodecCtx){
+
+        }else{
+            avcodec_parameters_to_context(videoCodecCtx, formatCtx->streams[videoIndex]->codecpar);
+            videoCodecCtx->thread_count = 0;
+            if(avcodec_open2(videoCodecCtx, videoCodec, NULL) < 0)
+            {
+                AVDictionaryEntry *tag = NULL;
+                tag = av_dict_get(formatCtx->streams[videoIndex]->metadata, "rotate", tag, 0);
+                if(tag != NULL)
+                    rotate = QString(tag->value).toInt();
+                switch (videoCodecCtx->pix_fmt) {
+                case AV_PIX_FMT_YUV420P :
+                case AV_PIX_FMT_YUVJ420P :
+                case AV_PIX_FMT_YUV422P :
+                case AV_PIX_FMT_YUVJ422P :
+                case AV_PIX_FMT_YUV444P :
+                case AV_PIX_FMT_YUVJ444P :
+                case AV_PIX_FMT_GRAY8 :
+                case AV_PIX_FMT_UYVY422 :
+                case AV_PIX_FMT_YUYV422 :
+                case AV_PIX_FMT_YUV420P10LE :
+                case AV_PIX_FMT_BGR24 :
+                case AV_PIX_FMT_RGB24 :
+                case AV_PIX_FMT_YUV410P :
+                case AV_PIX_FMT_YUV411P :
+                case AV_PIX_FMT_MONOWHITE :
+                case AV_PIX_FMT_MONOBLACK :
+                case AV_PIX_FMT_PAL8 :
+                case AV_PIX_FMT_UYYVYY411 :
+                case AV_PIX_FMT_BGR8 :
+                case AV_PIX_FMT_RGB8 :
+                case AV_PIX_FMT_NV12 :
+                case AV_PIX_FMT_NV21 :
+                case AV_PIX_FMT_ARGB :
+                case AV_PIX_FMT_RGBA :
+                case AV_PIX_FMT_ABGR :
+                case AV_PIX_FMT_BGRA :
+                case AV_PIX_FMT_GRAY16LE :
+                case AV_PIX_FMT_YUV440P :
+                case AV_PIX_FMT_YUVJ440P :
+                case AV_PIX_FMT_YUVA420P :
+                case AV_PIX_FMT_YUV420P16LE :
+                case AV_PIX_FMT_YUV422P16LE :
+                case AV_PIX_FMT_YUV444P16LE :
+                case AV_PIX_FMT_YUVA420P16LE :
+                case AV_PIX_FMT_YUVA422P16LE :
+                case AV_PIX_FMT_YUVA444P16LE :
+                case AV_PIX_FMT_YUV444P10LE :
+                    break;
+                default: //AV_PIX_FMT_YUV420P  如果上面的格式不支持直接渲染，则转换成通用AV_PIX_FMT_YUV420P格式
+                    videoSwsCtx = sws_getContext(
+                                videoCodecCtx->width,
+                                videoCodecCtx->height,
+                                videoCodecCtx->pix_fmt,
+                                videoCodecCtx->width,
+                                videoCodecCtx->height,
+                                AV_PIX_FMT_YUV420P,
+                                SWS_BICUBIC,NULL,NULL,NULL);
+                    break;
+                }
+
+
+
+                av_seek_frame(formatCtx,mVideoIndex,time * 1000,0);
+                AVPacket *pkt = av_packet_alloc();
+                while(av_read_frame(formatCtx, pkt) >= 0){
+                    if(pkt->stream_index == videoIndex){ //视频
+                        AVFrame *tempFrame = av_frame_alloc();
+                        while(avcodec_receive_frame(mVideoCodecCtx, tempFrame) == 0){
+                            av_frame_unref(tempFrame);
+                        }
+                        av_frame_free(&tempFrame);
+
+                        av_packet_unref(pkt);
+                        break;
+                    }
+                    av_packet_unref(pkt);
+                }
+                av_packet_free(&pkt);
+            }
+        }
+    }else{
+
+    }
+}
+
 void AVDecoder::decodec(){
     if((!mIsOpenVideoCodec && !mIsOpenAudioCodec) || !mIsInit){//必须同时存在音频和视频才能播放
         statusChanged(AVDefine::MediaStatus_InvalidMedia);
@@ -581,7 +723,7 @@ void AVDecoder::decodec(){
         return;
 
     if(mIsSeek){
-        //        qDebug() <<"------------- seek";
+//                qDebug() <<"------------- seek";
         statusChanged(AVDefine::MediaStatus_Seeking);
         av_seek_frame(mFormatCtx,-1,mSeekTime * 1000,AVSEEK_FLAG_BACKWARD);
         //        qDebug() << "------------------- av_seek_frame:" << mVideoCodecCtx->pts_correction_last_pts;
@@ -656,7 +798,7 @@ void AVDecoder::decodec(){
         }else{
             mIsVideoLoadedCompleted = false;
         }
-    }else if(pkt->stream_index == mAudioIndex && mIsOpenAudioCodec){
+    }else if(pkt->stream_index == mAudioIndex && mIsOpenAudioCodec && !getpreview()){ //预览时，不处理音频
         mIsAudioLoadedCompleted = false;
         if(!mIsSeekd){
             qint64 audioTime = av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * pkt->pts * 1000;
@@ -961,6 +1103,11 @@ void AVDecoder::checkRenderList(){
     }
 }
 
+/** 显示指定位置的帧 */
+void AVDecoder::showFrameByPosition(int time){
+    mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_ShowFrameByPosition,time));
+}
+
 /** 请求向音频buffer添加数据  */
 void AVDecoder::requestAudioNextFrame(int len){
     slotRequestAudioNextFrame(len);
@@ -1178,6 +1325,7 @@ void AVDecoder::slotRenderNextFrame(){
                 //                qDebug() << "-----------render->pts : " << render->pts << pkt->pts << render->frame->pts;
                 render->valid = true;
                 render->isRendered = false;
+//                qDebug() << "---------------- pts : " << render->pts;
             }else{
                 mVideoSwsCtxMutex.lock();
                 render->release(mVideoSwsCtx == NULL);
@@ -1557,9 +1705,14 @@ void AVCodecTask::run(){
         break;
     case AVCodecTaskCommand_SetFileName:{
         mCodec->setFilenameImpl(param2);
+        break;
     }
     case AVCodecTaskCommand_DecodeToRender : {
         mCodec->checkRenderList();
+        break;
+    }
+    case AVCodecTaskCommand_ShowFrameByPosition : {
+        mCodec->showFrameByPositionImpl(param);
     }
     }
 }

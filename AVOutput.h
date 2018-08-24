@@ -152,6 +152,7 @@ class AVOutput : public QQuickFramebufferObject
     Q_PROPERTY(int orientation READ orientation WRITE setOrientation NOTIFY orientationChanged)
     Q_PROPERTY(bool hdrMode READ HDR WRITE setHDR NOTIFY hdrModeChanged)
     Q_PROPERTY(bool vrMode READ VR WRITE setVR NOTIFY vrModeChanged)
+    Q_PROPERTY(bool useVideoBackground READ useVideoBackground WRITE setUseVideoBackground NOTIFY useVideoBackgroundChanged)
 
     Q_ENUMS(FillMode)
     Q_ENUMS(Orientation)
@@ -184,7 +185,10 @@ public:
     bool VR();
     void setVR(bool flag);
 
-    QRect calculateGeometry(int,int);
+    bool useVideoBackground();
+    void setUseVideoBackground(bool flag);
+
+    QRect calculateGeometry(int w,int h);
 public slots:
     void playStatusChanged();
 protected:
@@ -199,6 +203,7 @@ signals :
     void orientationChanged();
     void hdrModeChanged();
     void vrModeChanged();
+    void useVideoBackgroundChanged();
 
     void updateVideoFrame(VideoFormat*);
 private :
@@ -214,6 +219,7 @@ private :
     int mReallyFps;
     bool mEnableHDR;
     bool mEnableVR;
+    bool mUseVideoBackground;
 };
 
 
@@ -234,6 +240,7 @@ public:
         , mIsNeedNewUpdate(false)
         , mIsInitTextures(false)
         , mForceUpdate(true)
+        , mLastOffset(0.0f)
     {
 //        m_format.width = 0;
 //        m_format.height = 0;
@@ -296,5 +303,6 @@ private:
     bool mForceUpdate; //强制更新
 
     RenderParams params;
+    GLfloat mLastOffset; //上一次的偏移量
 };
 #endif // AVOUTPUT_H

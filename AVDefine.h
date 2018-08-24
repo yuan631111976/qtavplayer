@@ -1,6 +1,33 @@
 #ifndef AVDEFINE_H
 #define AVDEFINE_H
 
+#define GENERATE_QML_PROPERTY(Name,Type) Q_PROPERTY(Type Name READ get##Name WRITE set##Name NOTIFY Name##Changed)
+#define GENERATE_QML_NOSET_PROPERTY(Name,Type) Q_PROPERTY(Type Name READ get##Name NOTIFY Name##Changed)
+
+#define GENERATE_GET_SET_PROPERTY_CHANGED(Name,Type) \
+    private : \
+        Type m##Name; \
+        Type get##Name() const{return m##Name;} \
+        void set##Name(Type value); \
+    Q_SIGNALS : \
+        void Name##Changed();
+
+#define GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(Name,Type) \
+    private : \
+        Type m##Name; \
+    public : \
+        Type get##Name() const{return m##Name;} \
+        void set##Name(Type value){m##Name = value;} \
+    Q_SIGNALS : \
+        void Name##Changed();
+
+#define GENERATE_GET_PROPERTY_CHANGED(Name,Type) \
+    private : \
+        Type m##Name; \
+        Type get##Name() const{return m##Name;} \
+    Q_SIGNALS : \
+        void Name##Changed();
+
 #include <QObject>
 class AVDefine : public QObject{
     Q_OBJECT
@@ -76,7 +103,7 @@ public :
     enum FillMode {
         Stretch , //填满屏幕 ,不保护比例/the image is scaled to fit
         PreserveAspectFit, //保护缩放比例/the image is scaled uniformly to fit without cropping
-        PreserveAspectCrop //the image is scaled uniformly to fill, cropping if necessary
+        PreserveAspectCrop ,//the image is scaled uniformly to fill, cropping if necessary
     };
 
     enum Orientation{

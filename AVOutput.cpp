@@ -353,7 +353,6 @@ void AVRenderer::paint(){
     pboIndex = 0;
 
     GLfloat offset = 0;
-    AVRational widthRational = {1,1};
     for(int j = 0;j < TEXTURE_NUMBER;j++){
         m_pbo[pboIndex][j].bind();
         glActiveTexture(GL_TEXTURE0 + j);
@@ -386,10 +385,21 @@ void AVRenderer::paint(){
             int height = m_format.renderFrame->height * params.yuvheights[j].num / params.yuvheights[j].den;
 
             if(j == 0){// Y or R
-                offset = (GLfloat)((linesize % m_format.renderFrame->width) * 1.0 / (m_format.renderFrame->width + (linesize % m_format.renderFrame->width)));
-                widthRational.num = (linesize % m_format.renderFrame->width) + m_format.renderFrame->width;
-                widthRational.den = m_format.renderFrame->width;
+                offset = (GLfloat)((linesize % m_format.renderFrame->width) * 1.0 / m_format.renderFrame->width);
                 m_program->setUniformValue(mTextureOffset, offset); //偏移量
+
+                if(mLastOffset != offset){
+                    GLfloat realTimeTextureVertices[] = {
+                        0.0f,  0.0f,
+                        1.0f - offset,  0.0f,
+                        0.0f,  1.0f,
+                        1.0f - offset,  1.0f,
+                    };
+                    m_ibo->bind( );
+                    m_ibo->allocate( realTimeTextureVertices, sizeof( realTimeTextureVertices ));
+                    m_ibo->release();
+                }
+                mLastOffset = offset;
             }
 //            qDebug() << width << height;
 //            glPixelStorei(GL_UNPACK_SWAP_BYTES, GL_TRUE);
@@ -433,8 +443,15 @@ void AVRenderer::paint(){
     glClear(GL_COLOR_BUFFER_BIT);
 
     glEnable(GL_MULTISAMPLE);
-    m_displayRect.setWidth(m_displayRect.width() * widthRational.num / widthRational.den + 2);
     m_vao->bind();
+
+    if(m_output->useVideoBackground()){
+        m_program->setUniformValue(enableGaussianBlurId, true);
+        glViewport(0,0,m_output->width(),m_output->height());
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        m_program->setUniformValue(enableGaussianBlurId, false);
+    }
+
 //    if(m_output->VR()){
 //        glViewport(m_displayRect.x(),m_displayRect.y(),m_displayRect.width() / 2,m_displayRect.height());
 //        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -442,17 +459,10 @@ void AVRenderer::paint(){
 //        glViewport(m_displayRect.width() / 2,m_displayRect.y(),m_displayRect.width() / 2,m_displayRect.height());
 //        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 //    }else{
-
-//        m_program->setUniformValue(enableGaussianBlurId, true);
-//        glViewport(0,0,m_output->width() * widthRational.num / widthRational.den + 2,m_output->height());
-//        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-        m_program->setUniformValue(enableGaussianBlurId, false);
         glViewport(m_displayRect.x(),m_displayRect.y(),m_displayRect.width(),m_displayRect.height());
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 //    }
     m_vao->release();
-
     m_program->release();
     displayFbo->bindDefault();
 
@@ -471,10 +481,11 @@ AVOutput::AVOutput(QQuickItem *parent)
     , mOrientation(AVDefine::PrimaryOrientation)
     , mFps(30)
     , mIsDestroy(false)
-    , mBackgroundColor(QColor(255,0,0,255))
+    , mBackgroundColor(QColor(0,0,0,255))
     , mReallyFps(0)
     , mEnableHDR(false)
     , mEnableVR(false)
+    , mUseVideoBackground(false)
 {
 //    setFlag(ItemHasContents);
     connect(&mTimer,SIGNAL(timeout()),this,SLOT(update()));
@@ -551,6 +562,15 @@ void AVOutput::setVR(bool flag){
     emit vrModeChanged();
 }
 
+bool AVOutput::useVideoBackground(){
+    return mUseVideoBackground;
+}
+
+void AVOutput::setUseVideoBackground(bool flag){
+    mUseVideoBackground = flag;
+    emit useVideoBackground();
+}
+
 QColor AVOutput::backgroundColor() const{
     return mBackgroundColor;
 }
@@ -592,7 +612,7 @@ QRect AVOutput::calculateGeometry(int w,int h){
 QQuickFramebufferObject::Renderer *AVOutput::createRenderer() const{
     AVRenderer *renderer = new AVRenderer((AVOutput *)this);
     window()->setClearBeforeRendering(true);
-    window()->setColor(backgroundColor());
+    window()->setColor(QColor(0,0,0,0));
     renderer->updateVideoFrame(mPlayer->getRenderData());
     connect(this,SIGNAL(updateVideoFrame(VideoFormat*)),
             renderer,SLOT(updateVideoFrame(VideoFormat*)),Qt::DirectConnection);

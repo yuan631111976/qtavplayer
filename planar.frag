@@ -4,6 +4,8 @@ precision mediump int;
 precision mediump float;
 #endif
 
+//#include "qrc:/effects.glsl"
+
 uniform sampler2D tex_y;
 uniform sampler2D tex_u;
 uniform sampler2D tex_v;
@@ -15,13 +17,13 @@ uniform float imageHeight = 0;
 uniform bool enableHDR = false;
 uniform bool enableGaussianBlur = false;
 
+
 varying vec2 textureOut;
 
 float gamma = 2.2;
 vec3 toLinear(in vec3 colour) { return pow(colour, vec3(gamma)); }
 vec3 toHDR(in vec3 colour, in float range) { return toLinear(colour) * range; }
-
-const float PI = 3.1415926;
+const float M_PI = 3.1415926535897932384626433832795;
 vec4 GaussianBlur(sampler2D tex0, vec2 texCoordinates, float blurAmnt, int passingTurn, float sigma, float numBlurPixelsPerSide)
 {
     vec4 outputColor;
@@ -31,7 +33,7 @@ vec4 GaussianBlur(sampler2D tex0, vec2 texCoordinates, float blurAmnt, int passi
 
     // Incremental Gaussian Coefficent Calculation (See GPU Gems 3 pp. 877 - 889)
     vec3 incrementalGaussian;
-    incrementalGaussian.x = 1.0 / (sqrt(2.0 * PI) * sigma);
+    incrementalGaussian.x = 1.0 / (sqrt(2.0 * M_PI) * sigma);
     incrementalGaussian.y = exp(-0.5f / (sigma * sigma));
     incrementalGaussian.z = incrementalGaussian.y * incrementalGaussian.y;
 
@@ -56,7 +58,6 @@ vec4 GaussianBlur(sampler2D tex0, vec2 texCoordinates, float blurAmnt, int passi
 
     return outputColor;
 }
-
 void main()
 {
     if(textureOut.x > 1.0 - tex_offset){

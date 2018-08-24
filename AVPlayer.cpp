@@ -30,6 +30,9 @@ AVPlayer::AVPlayer()
     , mIsAudioWaiting(NULL)
     , mRenderData(NULL)
     , mIsClickedPlay(false)
+    , mpreview(false)
+    , msourceWidth(-1)
+    , msourceHeight(-1)
 {
     mDecoder = new AVDecoder;
     mDecoder->setMediaCallback(this);
@@ -79,10 +82,12 @@ AVPlayer::~AVPlayer(){
 }
 
 void AVPlayer::classBegin(){
-
 }
 
 void AVPlayer::componentComplete(){
+    if(mDecoder){
+        mDecoder->setpreview(this->getpreview());
+    }
     if (!mSource.isEmpty() && (mAutoLoad || mAutoPlay)) {
         if (mAutoLoad && mDecoder)
             mDecoder->load();
@@ -96,6 +101,9 @@ void AVPlayer::play(){
             restart();
         return;
     }
+
+    if(mDecoder)
+        mDecoder->setpreview(this->getpreview());
 
     mIsClickedPlay = true;
     mAudioMutex.lock();
@@ -112,7 +120,9 @@ void AVPlayer::play(){
     mAudioBufferMutex.unlock();
     mAudioMutex.unlock();
 
-    mAudioTimer->begin();
+    if(!getpreview()){ //预览时，不播放声音数据
+        mAudioTimer->begin();
+    }
     setIsPlaying(true);
     setIsPaused(false);
     mCondition.wakeAll();
@@ -197,7 +207,9 @@ void AVPlayer::restart(){
     }
 
     mAudioMutex.unlock();
-    mAudioTimer->begin();
+    if(!getpreview()){ //预览时，不播放声音数据
+        mAudioTimer->begin();
+    }
     wakeupPlayer();
     mCondition.wakeAll();
     mPlaybackState = AVDefine::PlayingState;
@@ -215,6 +227,10 @@ void AVPlayer::seek(int time){
     }
     mThread2.clearAllTask();//拖动前，删除待处理的任务
     mThread2.addTask(new AVPlayerTask(this,AVPlayerTask::AVPlayerTaskCommand_Seek,time));
+}
+
+void AVPlayer::showFrameByPosition(int time){
+
 }
 
 void AVPlayer::seekImpl(int time){
@@ -271,6 +287,11 @@ void AVPlayer::setSource(const QString &source){
         mAudio = NULL;
     }
     mAudioMutex.unlock();
+
+    if(mDecoder){
+        mDecoder->setpreview(this->getpreview());
+    }
+
     if(mDecoder)
         mDecoder->setFilename(mSource);
     emit sourceChanged();
@@ -405,7 +426,9 @@ void AVPlayer::mediaUpdateAudioFormat(const QAudioFormat &format){
         mSeekTime = mPos;
         delete mAudio;
     }
-    mAudio = new QAudioOutput(format);
+    if(!getpreview()){ //如果是预览，则不创建
+        mAudio = new QAudioOutput(format);
+    }
     mAudioMutex.unlock();
 
     if(isRestart || (mIsSetPlayRate && !mIsSetPlayRateBeforeIsPaused))
@@ -503,6 +526,7 @@ void AVPlayer::requestRender(){
     int nextTime = mDecoder->nextTime();
     mAudioMutex.lock();
     int currentTime = mAudio->processedUSecs() / 1000;
+//    qDebug() << "------------- current time : " << currentTime << ":" << nextTime;
     if(!hasAudio()){ //如果没有音频，则不使用音频的时间挫
         currentTime = currentVideoTime;
         mPos = currentTime;
@@ -531,7 +555,9 @@ void AVPlayer::requestRender(){
                 mAudio->resume();
             mAudioMutex.unlock();
             mIsAudioWaiting = false;
-            mAudioTimer->begin();
+            if(!getpreview()){ //预览时，不播放声音数据
+                mAudioTimer->begin();
+            }
         }
     }
 
@@ -629,6 +655,15 @@ void AVPlayer::mediaUpdateVideoFrame(void* f){
         mPlayerCallback->updateVideoFrame(0,format->width,format->height,format->rotate,format->format);
     }
     mRenderData = (VideoFormat *)f;
+    if(mRenderData->width != msourceWidth){
+        msourceWidth = mRenderData->width;
+        emit sourceWidthChanged();
+    }
+
+    if(mRenderData->height != msourceHeight){
+        msourceHeight = mRenderData->height;
+        emit sourceHeightChanged();
+    }
     emit updateVideoFrame(mRenderData);
 }
 

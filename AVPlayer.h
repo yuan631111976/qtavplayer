@@ -31,6 +31,14 @@ class AVPlayer : public QObject , public AVMediaCallback , public AVMediaPlayer 
     Q_PROPERTY(int bufferSize READ bufferSize WRITE setBufferSize)
     Q_PROPERTY(int bufferMode READ getMediaBufferMode WRITE setMediaBufferMode)
     Q_PROPERTY(bool accompany READ getAccompany WRITE setAccompany NOTIFY accompanyChanged) //true : 伴唱 | false : 原唱 ，默认为false
+
+    GENERATE_QML_NOSET_PROPERTY(sourceWidth,int) //原视屏的宽度
+    GENERATE_QML_NOSET_PROPERTY(sourceHeight,int)//原视屏的高度
+    GENERATE_QML_PROPERTY(preview,bool)//是否是预览
+
+    GENERATE_GET_PROPERTY_CHANGED(sourceWidth,int)
+    GENERATE_GET_PROPERTY_CHANGED(sourceHeight,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(preview,bool)//是否是预览
 public:
     AVPlayer();
     ~AVPlayer();
@@ -82,6 +90,7 @@ public slots:
     void stop();
     void restart();
     void seek(int time);
+    void showFrameByPosition(int time); //显示指定位置的帧
 public :
     void seekImpl(int time);
 //avmediacallback实现
@@ -110,7 +119,6 @@ signals :
     void updateVideoFrame(VideoFormat*);
     void playCompleted(); //播放完成
     void accompanyChanged();
-
 public :
     void requestRender();
     void requestAudioData();
