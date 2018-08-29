@@ -1,27 +1,24 @@
 #include "AVPlayer.h"
 
 AVPlayer::AVPlayer()
-    : AVMediaPlayer(0)
-    , mDecoder(NULL)
+    : mDecoder(NULL)
     , mComplete(false)
     , mAutoLoad(true)
     , mAutoPlay(false)
     , mAudio(NULL)
-    , mMediaBufferMode(AVDefine::MediaBufferMode_Time)
     , mBufferSize(5000)
     , mRrnderFirstFrame(true)
     , mLastTime(0)
     , mIsDestroy(false)
-    , mStatus(AVDefine::MediaStatus_UnknownStatus)
-    , mSynchMode(AVDefine::AUDIO)
+    , mStatus(AVDefine::AVMediaStatus_UnknownStatus)
+    , mSynchMode(AVDefine::AVSynchMode_Audio_Video)
     , mVolume(1.0)
     , mDuration(0)
     , mPos(0)
     , mIsPaused (true)
     , mIsPlaying (false)
     , mSeekTime(0)
-    , mPlayerCallback(NULL)
-    , mPlaybackState(AVDefine::StoppedState)
+    , mPlaybackState(AVDefine::AVPlayState_Stopped)
     , mAudioTimer(new AVTimer(this))
     , mAudioBuffer(NULL)
     , mIsSeeked(true)
@@ -33,10 +30,10 @@ AVPlayer::AVPlayer()
     , mpreview(false)
     , msourceWidth(-1)
     , msourceHeight(-1)
+    , mkdMode(AVDefine::AVKDMode_Default)
 {
     mDecoder = new AVDecoder;
     mDecoder->setMediaCallback(this);
-    mDecoder->setMediaBufferMode(mMediaBufferMode);
     mDecoder->setBufferSize(mBufferSize);
     mComplete = true;
 }
@@ -113,7 +110,6 @@ void AVPlayer::play(){
             mDecoder->load();
         return;
     }
-
     mAudio->setVolume(mVolume);
     mAudioBufferMutex.lock();
     mAudioBuffer = mAudio->start();
@@ -129,9 +125,7 @@ void AVPlayer::play(){
     wakeupPlayer();
     seek(0);
 
-    mPlaybackState = AVDefine::PlayingState;
-    if(mPlayerCallback != NULL)
-        mPlayerCallback->playStatusChanged(AVDefine::PlayingState);
+    mPlaybackState = AVDefine::AVPlayState_Playing;
     emit playStatusChanged();
 }
 
@@ -149,9 +143,7 @@ void AVPlayer::pause(){
     }
     mAudioMutex.unlock();
 
-    mPlaybackState = AVDefine::PausedState;
-    if(mPlayerCallback != NULL)
-        mPlayerCallback->playStatusChanged(AVDefine::PausedState);
+    mPlaybackState = AVDefine::AVPlayState_Paused;
     emit playStatusChanged();
 }
 
@@ -177,10 +169,9 @@ void AVPlayer::stop(){
         mDecoder->stop();
     mCondition.wakeAll();
 
-    mPlaybackState = AVDefine::StoppedState;
-    if(mPlayerCallback != NULL)
-        mPlayerCallback->playStatusChanged(AVDefine::StoppedState);
+    mPlaybackState = AVDefine::AVPlayState_Stopped;
     emit playStatusChanged();
+    mPos = mDuration;
 }
 
 void AVPlayer::restart(){
@@ -212,10 +203,8 @@ void AVPlayer::restart(){
     }
     wakeupPlayer();
     mCondition.wakeAll();
-    mPlaybackState = AVDefine::PlayingState;
+    mPlaybackState = AVDefine::AVPlayState_Playing;
 
-    if(mPlayerCallback != NULL)
-        mPlayerCallback->playStatusChanged(AVDefine::PlayingState);
     emit playStatusChanged();
 }
 
@@ -356,20 +345,17 @@ void AVPlayer::setVolume(int vol){
     emit volumeChanged();
 }
 
-float AVPlayer::playRate() const{
+int AVPlayer::getplaySpeedRate() const{
     if(mDecoder)
         return mDecoder->getPlayRate();
-    return 1.0f;
+    return (int)AVDefine::AVPlaySpeedRate_Normal;
 }
-void AVPlayer::setPlayRate(float playRate){
-    if(playRate == 0)
-        return;
+void AVPlayer::setplaySpeedRate(int playRate){
     mThread2.clearAllTask((int)AVPlayerTask::AVPlayerTaskCommand_SetPlayRate);
     mThread2.addTask(new AVPlayerTask(this,AVPlayerTask::AVPlayerTaskCommand_SetPlayRate,playRate));
-    emit playRateChanged();
 }
 
-void AVPlayer::slotSetPlayRate(float playRate){
+void AVPlayer::slotSetPlayRate(int playRate){
     if(mIsSetPlayRate){
         if(mThread2.size((int)AVPlayerTask::AVPlayerTaskCommand_SetPlayRate) == 0){
             mThread2.addTask(new AVPlayerTask(this,AVPlayerTask::AVPlayerTaskCommand_SetPlayRate,playRate));
@@ -387,27 +373,50 @@ void AVPlayer::slotSetPlayRate(float playRate){
         pause();
     if(mDecoder)
         mDecoder->setPlayRate(playRate);
+
+    emit playSpeedRateChanged();
 }
 
 int AVPlayer::getMediaBufferMode() const{
-    return (int)mMediaBufferMode;
+    if(mDecoder)
+        return (int)mDecoder->getMediaBufferMode();
+    return (int)AVDefine::AVMediaBufferMode_Default;
 }
 void AVPlayer::setMediaBufferMode(int mode){
-    mMediaBufferMode = (AVDefine::MediaBufferMode)mode;
     if(mDecoder)
-        mDecoder->setMediaBufferMode(mMediaBufferMode);
+        mDecoder->setMediaBufferMode((AVDefine::AVMediaBufferMode)mode);
 }
 
-bool AVPlayer::getAccompany()const{
+bool AVPlayer::getaccompany()const{
     if(mDecoder)
         return mDecoder->getAccompany();
     return false;
 }
-void AVPlayer::setAccompany(bool flag){
+void AVPlayer::setaccompany(bool flag){
     if(mDecoder){
         mDecoder->setAccompany(flag);
         emit accompanyChanged();
     }
+}
+
+int AVPlayer::getchannelLayout()const{
+    if(mDecoder)
+        return mDecoder->getAudioChannel();
+    return (int)AVDefine::AVChannelLayout_Default;
+}
+void AVPlayer::setchannelLayout(int value){
+    if(mDecoder){
+        mDecoder->setAudioChannel((AVDefine::AVChannelLayout)value);
+        emit channelLayoutChanged();
+    }
+}
+
+int AVPlayer::getkdMode()const{
+    return mkdMode;
+}
+void AVPlayer::setkdMode(int value){
+    mkdMode = value;
+    emit kdModeChanged();
 }
 
 void AVPlayer::mediaUpdateAudioFormat(const QAudioFormat &format){
@@ -445,13 +454,11 @@ void AVPlayer::mediaUpdateAudioFrame(const QByteArray &buffer){
         mAudioBuffer->write(buffer);
         mPos = mAudio->processedUSecs() / 1000;
         if(mDecoder)
-            mPos *= mDecoder->getPlayRate();
+            mPos *= mDecoder->getRealPlayRate();
         mPos += mSeekTime;
     }
 
     mAudioBufferMutex.unlock();
-    if(mPlayerCallback != NULL)
-        mPlayerCallback->positionChanged(mPos);
 
     emit positionChanged();
 }
@@ -535,13 +542,13 @@ void AVPlayer::requestRender(){
 
     mAudioMutex.unlock();//----------- 5
     if(mDecoder == NULL)return;
-    currentTime *= mDecoder->getPlayRate();
+    currentTime *= mDecoder->getRealPlayRate();
     if(hasAudio())
         currentTime += mSeekTime;
     int sleepTime = nextTime - currentTime < 0 ? 0 : nextTime - currentTime;
 //    qDebug() << "------------------ sleepTime : " << sleepTime << ":" << mAudio->processedUSecs() / 1000 << ":" << nextTime << ":" << currentTime;
 
-    if(hasAudio()){
+    if(hasAudio() && mkdMode == AVDefine::AVKDMode_Audio_Wait && mDecoder->getPlayRate() == AVDefine::AVPlaySpeedRate_Normal){
         if(currentTime - nextTime >= 1000 && !mIsAudioWaiting){ //某些视频解码太耗时，误差太大的话，先将音频暂停，再继续播放
             mAudioMutex.lock();
             if(mAudio)
@@ -558,6 +565,11 @@ void AVPlayer::requestRender(){
             if(!getpreview()){ //预览时，不播放声音数据
                 mAudioTimer->begin();
             }
+        }
+    }else if(mkdMode == AVDefine::AVKDMode_ThrowAway_Video || mDecoder->getPlayRate() != AVDefine::AVPlaySpeedRate_Normal){
+        if(currentTime - nextTime >= 1000 && !mIsAudioWaiting){
+            if(mDecoder != NULL)
+                mDecoder->throwAwaysFrameToTime(currentTime);
         }
     }
 
@@ -587,37 +599,31 @@ void AVPlayer::mediaCanRenderFirstFrame(){
     }
 }
 
-void AVPlayer::mediaStatusChanged(AVDefine::MediaStatus status){
-    if(mPlayerCallback != NULL){
-        mPlayerCallback->statusChanged(status);
-    }
+void AVPlayer::mediaStatusChanged(AVDefine::AVMediaStatus status){
     emit statusChanged();
     switch(status){
-        case AVDefine::MediaStatus_Seeking :
-        case AVDefine::MediaStatus_Buffering :{
+        case AVDefine::AVMediaStatus_Seeking :
+        case AVDefine::AVMediaStatus_Buffering :{
 //            qDebug() <<"buffering paused";
             pause();
             break;
         }
-        case AVDefine::MediaStatus_Buffered :{
+        case AVDefine::AVMediaStatus_Buffered :{
 //            qDebug() <<"buffered played:";
-            if(mStatus != AVDefine::MediaStatus_Seeking && (this->autoPlay() || mIsClickedPlay))
+            if(mStatus != AVDefine::AVMediaStatus_Seeking && (this->autoPlay() || mIsClickedPlay))
                 play();
             mIsClickedPlay = false;
             break;
         }
-        case AVDefine::MediaStatus_Played :{
+        case AVDefine::AVMediaStatus_Played :{
 //            qDebug() <<"播放完成";
             stop();
-            if(mPlayerCallback != NULL){
-                mPlayerCallback->positionChanged(duration());
-            }
             emit positionChanged();
             emit playCompleted();
             break;
         }
 
-        case AVDefine::MediaStatus_Seeked :{
+        case AVDefine::AVMediaStatus_Seeked :{
 //            qDebug() <<"拖动完成" << mThread2.size();
             mIsSeekedMutex.lock();
             mIsSeeked = true;
@@ -632,9 +638,6 @@ void AVPlayer::mediaStatusChanged(AVDefine::MediaStatus status){
 
 void AVPlayer::mediaDurationChanged(int duration){
     mDuration = duration;
-    if(mPlayerCallback != NULL){
-        mPlayerCallback->durationChanged(duration);
-    }
     emit durationChanged();
 }
 
@@ -650,10 +653,6 @@ VideoFormat *AVPlayer::getRenderData(){
 }
 
 void AVPlayer::mediaUpdateVideoFrame(void* f){
-    if(mPlayerCallback != NULL){
-        VideoFormat *format = (VideoFormat *)f;
-        mPlayerCallback->updateVideoFrame(0,format->width,format->height,format->rotate,format->format);
-    }
     mRenderData = (VideoFormat *)f;
     if(mRenderData->width != msourceWidth){
         msourceWidth = mRenderData->width;
@@ -675,58 +674,8 @@ void AVPlayer::mediaHasVideoChanged(){
     emit hasVideoChanged();
 }
 
-
-/** 设置文件路径 */
-void AVPlayer::setFileName(const char *path){
-    QString str(path);
-    setSource(str);
-}
-
-/** 获取当前音量 */
-int AVPlayer::getVolume(){
-    return volume();
-}
-
-/** 设置播放速率(0.125 - 8)
-*   0.125 以1/8的速度播放(慢速播放)
-*   8 以8/1的速度播放(快速播放)
-*   慢速播放公式(rate = 1.0 / 倍数(最大为8))
-*   快速播放公式(rate = 1.0 * 倍数(最大为8))
-*/
-void AVPlayer::setPlaybackRate(float rate){
-    setPlayRate(rate);
-}
-
-/** 获取当前播放速率 */
-float AVPlayer::getPlaybackRate(){
-    if(mDecoder)
-        return mDecoder->getPlayRate();
-    return 1.0f;
-}
-
-/** 获取当前视频的总时长 */
-int AVPlayer::getDuration(){
-    return duration();
-}
-
-/** 获取当前视频的播放位置 */
-int AVPlayer::getPosition(){
-    return pos();
-}
-
-/** 获取当前媒体状态 */
-int AVPlayer::getCurrentMediaStatus(){
-    return (int)mStatus;
-}
-
-/** 获取当前播放状态 */
-int AVPlayer::getPlaybackState(){
-    return (int)mPlaybackState;
-}
-
-/** 设置播放回调接口 */
-void AVPlayer::setPlayerCallback(AVPlayerCallback *callback){
-    this->mPlayerCallback = callback;
+AVDefine::AVPlayState AVPlayer::getPlaybackState(){
+    return mPlaybackState;
 }
 
 /** 现程实现 */

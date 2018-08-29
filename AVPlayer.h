@@ -5,14 +5,13 @@
 #include <QtQml/QQmlParserStatus>
 #include <QAudioOutput>
 #include <QBuffer>
-#include "AVMediaPlayer.h"
 #include "AVDecoder.h"
 #include "AVDefine.h"
 #include "AVThread.h"
 #include "AVMediaCallback.h"
 
 class AVTimer;
-class AVPlayer : public QObject , public AVMediaCallback , public AVMediaPlayer ,public QQmlParserStatus
+class AVPlayer : public QObject , public AVMediaCallback ,public QQmlParserStatus
 {
     Q_OBJECT
     Q_INTERFACES(QQmlParserStatus)
@@ -25,20 +24,29 @@ class AVPlayer : public QObject , public AVMediaCallback , public AVMediaPlayer 
     Q_PROPERTY(int status READ status NOTIFY statusChanged)
     Q_PROPERTY(bool renderFirstFrame READ renderFirstFrame WRITE setRenderFirstFrame)
     Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
-    Q_PROPERTY(float playRate READ playRate WRITE setPlayRate NOTIFY playRateChanged)
     Q_PROPERTY(int pos READ pos WRITE seek NOTIFY positionChanged)
     Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
     Q_PROPERTY(int bufferSize READ bufferSize WRITE setBufferSize)
     Q_PROPERTY(int bufferMode READ getMediaBufferMode WRITE setMediaBufferMode)
-    Q_PROPERTY(bool accompany READ getAccompany WRITE setAccompany NOTIFY accompanyChanged) //true : 伴唱 | false : 原唱 ，默认为false
 
     GENERATE_QML_NOSET_PROPERTY(sourceWidth,int) //原视屏的宽度
     GENERATE_QML_NOSET_PROPERTY(sourceHeight,int)//原视屏的高度
     GENERATE_QML_PROPERTY(preview,bool)//是否是预览
+    GENERATE_QML_PROPERTY(playSpeedRate,int)//播放速率，参数为AVDefine.PlaySpeedRate
+    GENERATE_QML_PROPERTY(accompany,bool)//是否启用伴唱 //true : 伴唱 | false : 原唱 ，默认为false
+    GENERATE_QML_PROPERTY(channelLayout,int)//AVDefine.AVChannelLayout
+    GENERATE_QML_PROPERTY(kdMode,int)//AVDefine.AVKDMode
+
+
 
     GENERATE_GET_PROPERTY_CHANGED(sourceWidth,int)
     GENERATE_GET_PROPERTY_CHANGED(sourceHeight,int)
-    GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(preview,bool)//是否是预览
+    GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(preview,bool)
+    GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(playSpeedRate,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(accompany,bool)
+    GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(channelLayout,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(kdMode,int)
+
 public:
     AVPlayer();
     ~AVPlayer();
@@ -65,9 +73,7 @@ public:
     int volume() const;
     void setVolume(int vol);
 
-    float playRate() const;
-    void setPlayRate(float);
-    void slotSetPlayRate(float);
+    void slotSetPlayRate(int);
 
     int pos() const;
     int duration() const;
@@ -75,10 +81,9 @@ public:
     int getMediaBufferMode() const;
     void setMediaBufferMode(int mode);
 
-    bool getAccompany()const;
-    void setAccompany(bool flag);
 
     VideoFormat *getRenderData();
+    AVDefine::AVPlayState getPlaybackState();
 
     //QQmlParserStatus
     virtual void classBegin();
@@ -99,7 +104,7 @@ public :
     void mediaUpdateAudioFrame(const QByteArray &);
     void mediaUpdateVideoFrame(void*);
     void mediaDurationChanged(int);
-    void mediaStatusChanged(AVDefine::MediaStatus);
+    void mediaStatusChanged(AVDefine::AVMediaStatus);
     void mediaHasAudioChanged();
     void mediaHasVideoChanged();
     void mediaCanRenderFirstFrame();
@@ -114,58 +119,33 @@ signals :
     void hasVideoChanged();
     void statusChanged();
     void volumeChanged();
-    void playRateChanged();
     void playStatusChanged();
     void updateVideoFrame(VideoFormat*);
     void playCompleted(); //播放完成
-    void accompanyChanged();
+
+    //更新音频频谱
+    void updateSpectrum();
+
 public :
     void requestRender();
     void requestAudioData();
 private :
     void wakeupPlayer();
 
-//    bool mIsPaused;
-//    bool mIsPlaying;
     void setIsPaused(bool);
     bool getIsPaused();
 
     void setIsPlaying(bool);
     bool getIsPlaying();
-//avmediaplayer 实现
-public slots:
-    /** 设置文件路径 */
-    void setFileName(const char *path);
-    /** 获取当前音量 */
-    int getVolume();
-    /** 设置播放速率(0.125 - 8)
-    *   0.125 以1/8的速度播放(慢速播放)
-    *   8 以8/1的速度播放(快速播放)
-    *   慢速播放公式(rate = 1.0 / 倍数(最大为8))
-    *   快速播放公式(rate = 1.0 * 倍数(最大为8))
-    */
-    void setPlaybackRate(float rate);
-    /** 获取当前播放速率 */
-    float getPlaybackRate();
-    /** 获取当前视频的总时长 */
-    int getDuration();
-    /** 获取当前视频的播放位置 */
-    int getPosition();
-    /** 获取当前媒体状态 */
-    int getCurrentMediaStatus();
-    /** 获取当前播放状态 */
-    int getPlaybackState();
-    /** 设置播放回调接口 */
-    void setPlayerCallback(AVPlayerCallback *);
 private:
     AVDecoder *mDecoder;
-    AVDefine::MediaStatus mStatus;
-    AVDefine::SynchMode mSynchMode;
+    AVDefine::AVMediaStatus mStatus;
+    AVDefine::AVSynchMode mSynchMode;
 
     bool mAutoLoad;
     bool mAutoPlay;
     bool mRrnderFirstFrame;
-    AVDefine::MediaBufferMode mMediaBufferMode;
+
     int mBufferSize;
     float mVolume;
     int mDuration;
@@ -202,9 +182,8 @@ private:
     QWaitCondition mCondition;
     QMutex mMutex;
 
-    AVPlayerCallback *mPlayerCallback;
     /** 播放状态 */
-    AVDefine::PlaybackState mPlaybackState;
+    AVDefine::AVPlayState mPlaybackState;
     VideoFormat *mRenderData;
 };
 

@@ -1,4 +1,5 @@
 #include "AVDecoder.h"
+#include <QtMath>
 #include <QDebug>
 
 
@@ -144,15 +145,14 @@ AVDecoder::AVDecoder()
     , mIsOpenVideoCodec(false)
     , mRotate(0)
     , mIsReadFinish(false)
-    , mMediaBufferMode(AVDefine::MediaBufferMode_Time)
+    , mMediaBufferMode(AVDefine::AVMediaBufferMode_Time)
     , mBufferSize(5000)
     , mIsDestroy(false)
     , mAudioSwrCtx(NULL)
     , mIsVideoBuffered(false)
     , mIsAudioBuffered(false)
     , mIsSubtitleBuffered(false)
-    , mStatus(AVDefine::MediaStatus_UnknownStatus)
-    , mAudioDstData(NULL)
+    , mStatus(AVDefine::AVMediaStatus_UnknownStatus)
     , mVideoSwsCtx(NULL)
     , mIsSeek(false)
     , mSeekTime(-1)
@@ -167,7 +167,7 @@ AVDecoder::AVDecoder()
     , mAvioBuffer(NULL)
     , mLastTime(0)
     , mLastPos(0)
-    , mPlayRate(1.0)
+    , mPlayRate(AVDefine::AVPlaySpeedRate_Normal)
     , mCallback(NULL)
 
     , mAudioFrame(NULL)
@@ -183,7 +183,14 @@ AVDecoder::AVDecoder()
     , mLastRenderItem(NULL)
     , mIsNeedCallRenderFirstFrame(true)
     , mIsAccompany(false)
+    , mAudioBufferSinkCtx(NULL)
+    , mAudioBufferSrcCtx(NULL)
+    , mAudioFilterGraph(NULL)
+    , mAudioChannelLayout(AVDefine::AVChannelLayout_Auto)
+    , mSourceSampleRate(8000)
+    , mRealPlayRate(1.0f)
 {
+
 #ifdef LIBAVUTIL_VERSION_MAJOR
 #if (LIBAVUTIL_VERSION_MAJOR < 56)
     avcodec_register_all();
@@ -217,17 +224,18 @@ AVDecoder::~AVDecoder(){
 void AVDecoder::init(){
     if(mIsInit)
         return;
+
     if(avformat_open_input(&mFormatCtx, mFilename.toStdString().c_str(), NULL, NULL) != 0)
     {
         qDebug() << "media open error : " << mFilename.toStdString().data();
-        statusChanged(AVDefine::MediaStatus_NoMedia);
+        statusChanged(AVDefine::AVMediaStatus_NoMedia);
         return;
     }
 
     if(avformat_find_stream_info(mFormatCtx, NULL) < 0)
     {
         qDebug() << "media find stream error : " << mFilename.toStdString().data();
-        statusChanged(AVDefine::MediaStatus_InvalidMedia);
+        statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
         return;
     }
 
@@ -243,7 +251,7 @@ void AVDecoder::init(){
         if (!mVideoCodecCtx){
             //qDebug() << "create video context fail!";
             //            qDebug() << "avformat_open_input 3";
-            statusChanged(AVDefine::MediaStatus_InvalidMedia);
+            statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
         }else{
             avcodec_parameters_to_context(mVideoCodecCtx, mFormatCtx->streams[mVideoIndex]->codecpar);
 
@@ -272,7 +280,7 @@ void AVDecoder::init(){
             mIsOpenVideoCodec = true;
             if(avcodec_open2(mVideoCodecCtx, mVideoCodec, NULL) < 0)
             {
-                statusChanged(AVDefine::MediaStatus_InvalidMedia);
+                statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
                 mIsOpenVideoCodec = false;
             }
 
@@ -302,7 +310,7 @@ void AVDecoder::init(){
             /* create decoding context */
             mAudioCodecCtx = avcodec_alloc_context3(mAudioCodec);
             if (!mAudioCodecCtx){
-                statusChanged(AVDefine::MediaStatus_InvalidMedia);
+                statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
                 //qDebug() << "create audio context fail!";
             }else{
                 avcodec_parameters_to_context(mAudioCodecCtx, mFormatCtx->streams[mAudioIndex]->codecpar);
@@ -311,7 +319,7 @@ void AVDecoder::init(){
                 if(avcodec_open2(mAudioCodecCtx, mAudioCodec, NULL) < 0)
                 {
                     //qDebug() << "can't open audio codec";
-                    statusChanged(AVDefine::MediaStatus_InvalidMedia);
+                    statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
                     mIsOpenAudioCodec = false;
                 }
 
@@ -327,7 +335,7 @@ void AVDecoder::init(){
     //    mIsOpenAudioCodec = false;
     //    mIsOpenVideoCodec = false;
     if(!mIsOpenVideoCodec && !mIsOpenAudioCodec){ //如果即没有音频，也没有视频，则通知状态无效
-        statusChanged(AVDefine::MediaStatus_InvalidMedia);
+        statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
         release();//释放所有资源
         return;
     }
@@ -437,51 +445,30 @@ void AVDecoder::init(){
         mAudioFrame = av_frame_alloc();
 
         int sampleRate = mAudioCodecCtx->sample_rate;
-        int channels = mAudioCodecCtx->channels;
+        mSourceSampleRate = sampleRate;
 
-        QAudioFormat format;
-        format.setCodec("audio/pcm");
-        format.setSampleRate(sampleRate * mPlayRate);
-        format.setChannelCount(channels);
-        format.setSampleType(QAudioFormat::SignedInt);
-        format.setSampleSize(16);
-        format.setByteOrder(QAudioFormat::LittleEndian);
+        mSourceAudioFormat.setCodec("audio/pcm");
+        mSourceAudioFormat.setSampleRate(sampleRate * mRealPlayRate);
+        mSourceAudioFormat.setSampleType(QAudioFormat::SignedInt);
+        mSourceAudioFormat.setSampleSize(16);
+        mSourceAudioFormat.setByteOrder(QAudioFormat::LittleEndian);
 
-        mSourceAudioFormat = format;
 
-        if(mCallback){
-            mCallback->mediaUpdateAudioFormat(format);
+        if(!setAudioChannel(mAudioChannelLayout)){
+            statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
         }
 
-        mAudioSwrCtxMutex.lock();
-        mAudioSwrCtx = swr_alloc_set_opts(
-                    NULL,
-                    mAudioCodecCtx->channel_layout,
-                    AV_SAMPLE_FMT_S16,
-                    sampleRate,
-                    mAudioCodecCtx->channel_layout,
-                    mAudioCodecCtx->sample_fmt,
-                    sampleRate,
-                    0,NULL);
-        if(!mAudioSwrCtx)
-        {
-            statusChanged(AVDefine::MediaStatus_InvalidMedia);
-        }else{
-            swr_init(mAudioSwrCtx);
-        }
-        mAudioSwrCtxMutex.unlock();
         mIsAudioLoadedCompleted = false;
     }else{
-        QAudioFormat format;
-        format.setCodec("audio/pcm");
-        format.setSampleRate(8000 * mPlayRate);
-        format.setChannelCount(1);
-        format.setSampleType(QAudioFormat::SignedInt);
-        format.setSampleSize(16);
-        format.setByteOrder(QAudioFormat::LittleEndian);
-        mSourceAudioFormat = format;
+        mSourceSampleRate = 8000;
+        mSourceAudioFormat.setCodec("audio/pcm");
+        mSourceAudioFormat.setSampleRate(8000 * mRealPlayRate);
+        mSourceAudioFormat.setChannelCount(1);
+        mSourceAudioFormat.setSampleType(QAudioFormat::SignedInt);
+        mSourceAudioFormat.setSampleSize(16);
+        mSourceAudioFormat.setByteOrder(QAudioFormat::LittleEndian);
         if(mCallback){
-            mCallback->mediaUpdateAudioFormat(format);
+            mCallback->mediaUpdateAudioFormat(mSourceAudioFormat);
         }
     }
 
@@ -489,8 +476,10 @@ void AVDecoder::init(){
     audioq.init();
 
     mIsInit = true;
-    statusChanged(AVDefine::MediaStatus_Buffering);
+    statusChanged(AVDefine::AVMediaStatus_Buffering);
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
+
+    initAudioFilter();
 }
 
 /** 设置是否启用硬用 */
@@ -560,13 +549,8 @@ void AVDecoder::release(bool isDeleted){
     mIsVideoBuffered = false;
     mIsAudioBuffered = false;
     mIsSubtitleBuffered = false;
-    mStatus = AVDefine::MediaStatus_UnknownStatus;
+    mStatus = AVDefine::AVMediaStatus_UnknownStatus;
 
-    if(mAudioDstData != NULL)
-    {
-        delete mAudioDstData;
-        mAudioDstData = NULL;
-    }
 
     if(mVideoSwsCtx != NULL){
         sws_freeContext(mVideoSwsCtx);
@@ -690,7 +674,7 @@ void AVDecoder::showFrameByPositionImpl(int time){
 
 
 
-                av_seek_frame(formatCtx,mVideoIndex,time * 1000,0);
+                av_seek_frame(formatCtx,-1,time * 1000,AVSEEK_FLAG_BACKWARD);
                 AVPacket *pkt = av_packet_alloc();
                 while(av_read_frame(formatCtx, pkt) >= 0){
                     if(pkt->stream_index == videoIndex){ //视频
@@ -715,7 +699,7 @@ void AVDecoder::showFrameByPositionImpl(int time){
 
 void AVDecoder::decodec(){
     if((!mIsOpenVideoCodec && !mIsOpenAudioCodec) || !mIsInit){//必须同时存在音频和视频才能播放
-        statusChanged(AVDefine::MediaStatus_InvalidMedia);
+        statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
         return;
     }
 
@@ -724,7 +708,7 @@ void AVDecoder::decodec(){
 
     if(mIsSeek){
 //                qDebug() <<"------------- seek";
-        statusChanged(AVDefine::MediaStatus_Seeking);
+        statusChanged(AVDefine::AVMediaStatus_Seeking);
         av_seek_frame(mFormatCtx,-1,mSeekTime * 1000,AVSEEK_FLAG_BACKWARD);
         //        qDebug() << "------------------- av_seek_frame:" << mVideoCodecCtx->pts_correction_last_pts;
         mIsSeek = false;
@@ -750,14 +734,14 @@ void AVDecoder::decodec(){
             //                slotRenderNextFrame();
             //                mCallback->mediaCanRenderFirstFrame();
             //            }
-            statusChanged(AVDefine::MediaStatus_Buffered);
-            statusChanged(AVDefine::MediaStatus_Seeked);
-            statusChanged(AVDefine::MediaStatus_EndOfMedia);
+            statusChanged(AVDefine::AVMediaStatus_Buffered);
+            statusChanged(AVDefine::AVMediaStatus_Seeked);
+            statusChanged(AVDefine::AVMediaStatus_EndOfMedia);
         }else{
-            if(mStatus == AVDefine::MediaStatus_Buffering){
-                statusChanged(AVDefine::MediaStatus_Buffered);
+            if(mStatus == AVDefine::AVMediaStatus_Buffering){
+                statusChanged(AVDefine::AVMediaStatus_Buffered);
             }
-            statusChanged(AVDefine::MediaStatus_EndOfMedia);
+            statusChanged(AVDefine::AVMediaStatus_EndOfMedia);
         }
         return;
     }
@@ -922,11 +906,11 @@ void AVDecoder::decodec(){
 
             if(!mIsSeekd){
                 mIsSeekd = true;
-                statusChanged(AVDefine::MediaStatus_Buffered);
-                statusChanged(AVDefine::MediaStatus_Seeked);
+                statusChanged(AVDefine::AVMediaStatus_Buffered);
+                statusChanged(AVDefine::AVMediaStatus_Seeked);
             }
-            if(mStatus == AVDefine::MediaStatus_Buffering){
-                statusChanged(AVDefine::MediaStatus_Buffered);
+            if(mStatus == AVDefine::AVMediaStatus_Buffering){
+                statusChanged(AVDefine::AVMediaStatus_Buffered);
             }
         }
     }
@@ -981,11 +965,11 @@ void AVDecoder::load(){
 }
 
 /** 设置播放速率，最大为8，最小为1.0 / 8 */
-void AVDecoder::setPlayRate(float rate){
+void AVDecoder::setPlayRate(int rate){
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_SetPlayRate,rate));
 }
 
-float AVDecoder::getPlayRate(){
+int AVDecoder::getPlayRate(){
     return this->mPlayRate;
 }
 
@@ -1006,7 +990,7 @@ void AVDecoder::setBufferSize(int size){
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_SetBufferSize,size));
 }
 
-void AVDecoder::setMediaBufferMode(AVDefine::MediaBufferMode mode){
+void AVDecoder::setMediaBufferMode(AVDefine::AVMediaBufferMode mode){
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_SetMediaBufferMode,mode));
 }
 
@@ -1108,6 +1092,66 @@ void AVDecoder::showFrameByPosition(int time){
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_ShowFrameByPosition,time));
 }
 
+int AVDecoder::getAudioChannel()const{
+    return (int)mOutChannelLayout;
+}
+
+/** 设置音频通道 */
+bool AVDecoder::setAudioChannel(AVDefine::AVChannelLayout layout){
+    if(!mIsOpenAudioCodec)
+        return false;
+    mOutChannelLayout = mAudioCodecCtx->channel_layout;
+    mAudioChannelLayout = layout;
+    switch (layout) {
+    case AVDefine::AVChannelLayout_Auto:mOutChannelLayout = mAudioCodecCtx->channel_layout;break;
+    case AVDefine::AVChannelLayout_Left : mOutChannelLayout = AV_CH_FRONT_LEFT;break;
+    case AVDefine::AVChannelLayout_Right : mOutChannelLayout = AV_CH_FRONT_RIGHT;break;
+    case AVDefine::AVChannelLayout_Mono : mOutChannelLayout = AV_CH_LAYOUT_MONO;break;
+    case AVDefine::AVChannelLayout_Stereo : mOutChannelLayout = AV_CH_LAYOUT_STEREO;break;
+    default:
+        mOutChannelLayout = mAudioCodecCtx->channel_layout;
+        mAudioChannelLayout =AVDefine::AVChannelLayout_Auto;
+        break;
+    }
+
+    mAudioSwrCtxMutex.lock();
+
+    if(mAudioSwrCtx != NULL){
+        swr_close(mAudioSwrCtx);
+        swr_free(&mAudioSwrCtx);
+    }
+
+    mAudioSwrCtx = swr_alloc_set_opts(
+                NULL,
+                mOutChannelLayout,
+                AV_SAMPLE_FMT_S16,
+                mSourceSampleRate,
+                mAudioCodecCtx->channel_layout,
+                mAudioCodecCtx->sample_fmt,
+                mSourceSampleRate,
+                0,NULL);
+    if(mAudioSwrCtx != NULL)
+        swr_init(mAudioSwrCtx);
+    mAudioSwrCtxMutex.unlock();
+
+    mSourceAudioFormat.setChannelCount(av_get_channel_layout_nb_channels(mOutChannelLayout));
+
+    mAudioBufferMutex.lock();
+    //清除音频buffer
+    mAudioBuffer.clear();
+    mAudioBufferMutex.unlock();
+
+    if(mCallback){
+        mCallback->mediaUpdateAudioFormat(mSourceAudioFormat);
+    }
+
+    return mAudioSwrCtx != NULL;
+}
+
+void AVDecoder::throwAwaysFrameToTime(int time){
+    videoq.removeToTime(time);
+}
+
 /** 请求向音频buffer添加数据  */
 void AVDecoder::requestAudioNextFrame(int len){
     slotRequestAudioNextFrame(len);
@@ -1144,7 +1188,7 @@ void AVDecoder::slotSeek(int ms){
                 && ((astartTime < 1000 && astartTime >= 0) || !hasAudio())
                 ){
             //            qDebug() << "---------------:MediaStatus_Seeked";
-            statusChanged(AVDefine::MediaStatus_Seeked);
+            statusChanged(AVDefine::AVMediaStatus_Seeked);
             return;
         }
 
@@ -1175,7 +1219,7 @@ void AVDecoder::slotSetBufferSize(int size){
     mBufferSize = size;
 }
 
-void AVDecoder::slotSetMediaBufferMode(AVDefine::MediaBufferMode mode){
+void AVDecoder::slotSetMediaBufferMode(AVDefine::AVMediaBufferMode mode){
     mMediaBufferMode = mode;
 }
 
@@ -1183,13 +1227,37 @@ void AVDecoder::slotRenderFirstFrame(){
     slotRenderNextFrame();
 }
 
-void AVDecoder::slotSetPlayRate(float rate){
-    if(rate > 8 || rate < 1.0 / 8 || mPlayRate == rate){
+void AVDecoder::slotSetPlayRate(int rate){
+    if(rate == mPlayRate)
+        return;
+
+    if(mPlayRate != AVDefine::AVPlaySpeedRate_Normal
+            && mPlayRate != AVDefine::AVPlaySpeedRate_Q1_5
+            && mPlayRate != AVDefine::AVPlaySpeedRate_Q2
+            && mPlayRate != AVDefine::AVPlaySpeedRate_Q4
+            && mPlayRate != AVDefine::AVPlaySpeedRate_Q8
+            && mPlayRate != AVDefine::AVPlaySpeedRate_S1_5
+            && mPlayRate != AVDefine::AVPlaySpeedRate_S2
+            && mPlayRate != AVDefine::AVPlaySpeedRate_S4
+            && mPlayRate != AVDefine::AVPlaySpeedRate_S8
+            ){
         return;
     }
-    this->mPlayRate = rate;
-    QAudioFormat temp = mSourceAudioFormat;
-    temp.setSampleRate(temp.sampleRate() * mPlayRate);
+
+    mPlayRate = rate;
+
+    switch(mPlayRate){
+        case AVDefine::AVPlaySpeedRate_Normal : mRealPlayRate = 1.0f;break;
+        case AVDefine::AVPlaySpeedRate_Q1_5 :mRealPlayRate = 1.5f;break;
+        case AVDefine::AVPlaySpeedRate_Q2 :mRealPlayRate = 2.0f;break;
+        case AVDefine::AVPlaySpeedRate_Q4 :mRealPlayRate = 4.0f;break;
+        case AVDefine::AVPlaySpeedRate_Q8 :mRealPlayRate = 8.0f;break;
+        case AVDefine::AVPlaySpeedRate_S1_5 :mRealPlayRate = 0.75f;break;
+        case AVDefine::AVPlaySpeedRate_S2 :mRealPlayRate = 0.5f;break;
+        case AVDefine::AVPlaySpeedRate_S4 :mRealPlayRate = 0.25f;break;
+        case AVDefine::AVPlaySpeedRate_S8 :mRealPlayRate = 0.125f;break;
+    }
+    mSourceAudioFormat.setSampleRate(mSourceSampleRate * mRealPlayRate);
 
     mAudioBufferMutex.lock();
     //清除音频buffer
@@ -1197,7 +1265,7 @@ void AVDecoder::slotSetPlayRate(float rate){
     mAudioBufferMutex.unlock();
 
     if(mCallback){
-        mCallback->mediaUpdateAudioFormat(temp);
+        mCallback->mediaUpdateAudioFormat(mSourceAudioFormat);
     }
 }
 
@@ -1207,7 +1275,7 @@ void AVDecoder::slotRenderNextFrame(){
     if(!mIsInit)
         return;
     if(!mIsOpenVideoCodec && !mIsOpenAudioCodec){
-        statusChanged(AVDefine::MediaStatus_InvalidMedia);
+        statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
         return;
     }
     if(mIsDestroy || mIsVideoPlayed)
@@ -1355,14 +1423,14 @@ void AVDecoder::slotRenderNextFrame(){
         mVideoCodecCtxMutex.unlock();
     }else{
         if(!mIsReadFinish && !mIsVideoLoadedCompleted){
-            statusChanged(AVDefine::MediaStatus_Buffering);
+            statusChanged(AVDefine::AVMediaStatus_Buffering);
         }
         else if(getRenderListSize() <= 1 && videoq.size() == 0){
             mIsVideoPlayed = true;
         }
         if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
             //            qDebug() << "--------------- 播放完成B";
-            emit statusChanged(AVDefine::MediaStatus_Played);
+            emit statusChanged(AVDefine::AVMediaStatus_Played);
         }
     }
     if(pkt){
@@ -1380,13 +1448,50 @@ void AVDecoder::slotRenderNextFrame(){
     }
 }
 
+int WhichLog2(int n) {
+  switch (n) {
+    case 1:          return 0;     case 2:          return 1;     case 4:          return 2;
+    case 8:          return 3;     case 16:         return 4;     case 32:         return 5;
+    case 64:         return 6;     case 128:        return 7;     case 256:        return 8;
+    case 512:        return 9;     case 1024:       return 10;    case 2048:       return 11;
+    case 4096:       return 12;    case 8192:       return 13;    case 16384:      return 14;
+    case 32768:      return 15;    case 65536:      return 16;    case 131072:     return 17;
+    case 262144:     return 18;    case 524288:     return 19;    case 1048576:    return 20;
+    case 2097152:    return 21;    case 4194304:    return 22;    case 8388608:    return 23;
+    case 16777216:   return 24;    case 33554432:   return 25;    case 67108864:   return 26;
+    case 134217728:  return 27;    case 268435456:  return 28;    case 536870912:  return 29;
+    case 1073741824: return 30;    //case 2147483648: return 31;    case 4294967296: return 32;
+  } return -1;
+}
 
+void FFT(float *out, int fftlen) {  
+  int bits = WhichLog2(fftlen);
+//  qDebug() << "----------:" << fftlen <<bits << (qPow(2,fftlen));
+  if(bits <= 0 || out == NULL)
+      return;
+  RDFTContext *fftctx = av_rdft_init(bits, DFT_R2C);
+  if(fftctx != NULL){
+      av_rdft_calc(fftctx, out);
+      av_rdft_end(fftctx);
+  }
+}
+
+void IFFT(float *out, int fftlen) {
+  int bits = WhichLog2(fftlen);
+  if(bits <= 0 || out == NULL)
+      return;
+  RDFTContext *fftctx = av_rdft_init(bits, IDFT_C2R);
+  if(fftctx != NULL){
+      av_rdft_calc(fftctx, out);
+      av_rdft_end(fftctx);
+  }
+}
 void AVDecoder::slotRequestAudioNextFrame(int len){
     if(!mIsInit)
         return;
 
     if(!mIsOpenVideoCodec && !mIsOpenAudioCodec){
-        statusChanged(AVDefine::MediaStatus_InvalidMedia);
+        statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
         return;
     }
 
@@ -1419,34 +1524,35 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
                     break;
                 }
 
-                int outsize = dataSize * mAudioFrame->nb_samples * mAudioCodecCtx->channels;
-                if(mAudioDstData == NULL){
-                    mAudioDstData = new uint8_t[outsize];
-                }
+                int nb_channels = av_get_channel_layout_nb_channels(mOutChannelLayout);
+
+                int outsize = dataSize * mAudioFrame->nb_samples * nb_channels;
+                uint8_t *audioDstData = new uint8_t[outsize];
 
                 mAudioSwrCtxMutex.lock();
                 int ret2 = swr_convert(
                             mAudioSwrCtx,
-                            &mAudioDstData,
+                            &audioDstData,
                             outsize,
                             (const uint8_t**)mAudioFrame->data,
                             mAudioFrame->nb_samples
                             );
 
                 mAudioSwrCtxMutex.unlock();
-                outsize = ret2 * mAudioCodecCtx->channels * dataSize;
+                outsize = ret2 * nb_channels * dataSize;
                 mAudioBufferMutex.lock();
-                mAudioBuffer.append((const char *)mAudioDstData,outsize);
+                mAudioBuffer.append((const char *)audioDstData,outsize);
                 mAudioBufferMutex.unlock();
                 av_frame_unref(mAudioFrame);
 
-                delete mAudioDstData;
-                mAudioDstData = NULL;
+
+                delete [] audioDstData;
+                audioDstData = NULL;
             }
             slotRequestAudioNextFrame(len);
         }else{
             if(!mIsReadFinish && !mIsAudioLoadedCompleted)
-                statusChanged(AVDefine::MediaStatus_Buffering);
+                statusChanged(AVDefine::AVMediaStatus_Buffering);
             else if(audioq.size() == 0){
                 mIsAudioPlayed = true;
             }
@@ -1463,15 +1569,15 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
         mAudioBuffer.remove(0,len);
         mAudioBufferMutex.unlock();
         if(mCallback){
-            if(mIsAccompany){ //伴唱
-                float *floatArray = new float[r.size() >> 2];
-                float *outFloatArray = new float[r.size() >> 2];
-                ByteArrayToFloatArray((uint8_t*)r.data(),r.size(),floatArray);
-                AVAudioEffect::removeVoice(floatArray,outFloatArray,r.size() >> 2,mSourceAudioFormat.channelCount());
-                FloatArrayToByteArray(outFloatArray,r.size() >> 2,(uint8_t*)r.data());
-                delete [] floatArray;
-                delete [] outFloatArray;
-            }
+//            if(mIsAccompany){ //伴唱
+//                float *floatArray = new float[r.size() >> 2];
+//                float *outFloatArray = new float[r.size() >> 2];
+//                ByteArrayToFloatArray((uint8_t*)r.data(),r.size(),floatArray);
+//                AVAudioEffect::removeVoice(floatArray,outFloatArray,r.size() >> 2,mSourceAudioFormat.channelCount());
+//                FloatArrayToByteArray(outFloatArray,r.size() >> 2,(uint8_t*)r.data());
+//                delete [] floatArray;
+//                delete [] outFloatArray;
+//            }
 
 //            float *floatArray = new float[r.size() >> 2];
 //            float *outFloatArray = new float[r.size() >> 2];
@@ -1481,15 +1587,63 @@ void AVDecoder::slotRequestAudioNextFrame(int len){
 //            delete [] floatArray;
 //            delete [] outFloatArray;
 
+
+//            float *floatArray = new float[r.size() >> 2];
+//            ByteArrayToFloatArray((uint8_t*)r.data(),r.size(),floatArray);
+
+//            IFFT(floatArray,r.size() >> 2);
+
+//            FloatArrayToByteArray(floatArray,r.size() >> 2,(uint8_t*)r.data());
+//            delete [] floatArray;
+
+//            calcSpectrum((uint16_t *)mAudioBuffer.data());
+
             mCallback->mediaUpdateAudioFrame(r);
         }
     }
 
     if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
-        //        qDebug() << "--------------- 播放完成C:" << audioq.size() << videoq.size() << getRenderListSize();
-        emit statusChanged(AVDefine::MediaStatus_Played);
+        emit statusChanged(AVDefine::AVMediaStatus_Played);
     }
 }
+
+//计算频谱
+void AVDecoder::calcSpectrum(uint16_t *pcm){
+//    qDebug() << "--------" << pow(2,0) << sqrt(1024) << log(1024);
+    int height = 1000;
+    int rdft_bits, nb_freq , channels = mAudioCodecCtx->channels,i;
+    for (rdft_bits = 1; (1 << rdft_bits) < 2 * height; rdft_bits++);
+    nb_freq = 1 << (rdft_bits - 1);
+
+//    FFT((float *)pcm,nb_freq);
+
+//    const int nb_channels = av_get_channel_layout_nb_channels(mAudioCodecCtx->channel_layout);
+//    const int nb_display_channels = FFMIN(nb_channels, 2);
+//    RDFTContext *rdft = av_rdft_init(rdft_bits, DFT_R2C);
+
+//    qDebug() <<"---------------------- begin" << rdft_bits << nb_freq;
+
+//    FFTSample *rdft_data = (FFTSample *)av_malloc_array(nb_freq, 4 *sizeof(FFTSample));
+//    FFTSample *data[2];
+//    int ch;
+//    for (ch = 0; ch < nb_display_channels; ch++) {
+//        data[ch] = rdft_data + 2 * nb_freq * ch;
+//        i = ch;
+//        for (int x = 0; x < 2 * nb_freq; x++) {
+//            data[ch][x] = pcm[i];
+//            i += channels;
+//            if (i >= mAudioCodecCtx->sample_rate)
+//                i -= mAudioCodecCtx->sample_rate;
+//        }
+//        av_rdft_calc(rdft, data[ch]);
+//    }
+
+//    qDebug() <<"---------------------- end";
+
+//    av_rdft_end(rdft);
+//    av_free(rdft_data);
+}
+
 
 int AVDecoder::requestRenderNextFrame(){
     int time = mIsReadFinish ? -1 : 0;
@@ -1554,7 +1708,7 @@ int AVDecoder::requestRenderNextFrame(){
     }
     if(mIsVideoPlayed && mIsAudioPlayed && mIsSubtitlePlayed && mIsReadFinish){
         //        qDebug() << "--------------- 播放完成A";
-        emit statusChanged(AVDefine::MediaStatus_Played);
+        emit statusChanged(AVDefine::AVMediaStatus_Played);
     }
     return time;
 }
@@ -1674,7 +1828,128 @@ void AVDecoder::changeRenderItemSize(int width,int height,AVPixelFormat format){
         mRenderListMutex.unlock();
 }
 
-void AVDecoder::statusChanged(AVDefine::MediaStatus status){
+bool AVDecoder::initAudioFilter(){
+    const AVFilter *abuffersrc  = avfilter_get_by_name("abuffer");
+    const AVFilter *abuffersink = avfilter_get_by_name("abuffersink");
+
+    char args[512];
+    int ret = -1;
+
+    mAudioFilterGraph = avfilter_graph_alloc();
+    if (mAudioFilterGraph == NULL) {
+        ret = AVERROR(ENOMEM);
+        return false;
+    }
+
+    AVRational time_base = mFormatCtx->streams[mAudioIndex]->time_base;
+    snprintf(args, sizeof(args),
+            "time_base=%d/%d:sample_rate=%d:sample_fmt=%s:channel_layout=0x%llx",
+             time_base.num, time_base.den, mAudioCodecCtx->sample_rate,
+             av_get_sample_fmt_name(mAudioCodecCtx->sample_fmt), mAudioCodecCtx->channel_layout);
+    ret = avfilter_graph_create_filter(&mAudioBufferSrcCtx, abuffersrc, "in",args, NULL, mAudioFilterGraph);
+    if (ret < 0) {
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }
+
+    /* buffer audio sink: to terminate the filter chain. */
+    ret = avfilter_graph_create_filter(&mAudioBufferSinkCtx, abuffersink, "out",NULL, NULL, mAudioFilterGraph);
+    if (ret < 0) {
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }
+
+    static const enum AVSampleFormat out_sample_fmts[] = { mAudioCodecCtx->sample_fmt, (AVSampleFormat)-1 };
+    static const int64_t out_channel_layouts[] = { mAudioCodecCtx->channel_layout, -1 };
+    static const int out_sample_rates[] = { mAudioCodecCtx->sample_rate, -1 };
+
+    ret = av_opt_set_int_list(mAudioBufferSinkCtx, "sample_fmts", out_sample_fmts, -1,AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0) {
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }
+
+    ret = av_opt_set_int_list(mAudioBufferSinkCtx, "channel_layouts", out_channel_layouts, -1,AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0) {
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }
+
+    ret = av_opt_set_int_list(mAudioBufferSinkCtx, "sample_rates", out_sample_rates, -1,AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0) {
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }
+
+    AVFilterInOut *outputs = avfilter_inout_alloc();
+    AVFilterInOut *inputs  = avfilter_inout_alloc();
+
+    if(outputs == NULL && inputs == NULL){
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }else if(outputs == NULL){
+        avfilter_graph_free(&mAudioFilterGraph);
+        avfilter_inout_free(&inputs);
+    }else if(inputs == NULL){
+        avfilter_graph_free(&mAudioFilterGraph);
+        avfilter_inout_free(&outputs);
+    }
+
+
+    /*
+     * Set the endpoints for the filter graph. The filter_graph will
+     * be linked to the graph described by filters_descr.
+     */
+
+    /*
+     * The buffer source output must be connected to the input pad of
+     * the first filter described by filters_descr; since the first
+     * filter input label is not specified, it is set to "in" by
+     * default.
+     */
+    outputs->name       = av_strdup("in");
+    outputs->filter_ctx = mAudioBufferSrcCtx;
+    outputs->pad_idx    = 0;
+    outputs->next       = NULL;
+
+    /*
+     * The buffer sink input must be connected to the output pad of
+     * the last filter described by filters_descr; since the last
+     * filter output label is not specified, it is set to "out" by
+     * default.
+     */
+    inputs->name       = av_strdup("out");
+    inputs->filter_ctx = mAudioBufferSinkCtx;
+    inputs->pad_idx    = 0;
+    inputs->next       = NULL;
+
+    if ((ret = avfilter_graph_parse_ptr(mAudioFilterGraph, "atempo=2.0,atempo=2.0",&inputs, &outputs, NULL)) < 0){
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }
+
+    if ((ret = avfilter_graph_config(mAudioFilterGraph, NULL)) < 0)
+    {
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        avfilter_graph_free(&mAudioFilterGraph);
+        return false;
+    }
+
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+    return true;
+}
+
+void AVDecoder::releaseAudioFilter(){
+    if(mAudioFilterGraph != NULL){
+        avfilter_graph_free(&mAudioFilterGraph);
+    }
+}
+
+void AVDecoder::statusChanged(AVDefine::AVMediaStatus status){
     if(mStatus == status)
         return;
     mStatus = status;
@@ -1697,7 +1972,7 @@ void AVCodecTask::run(){
         mCodec->slotSetBufferSize(param);
         break;
     case AVCodecTaskCommand_SetMediaBufferMode:
-        mCodec->slotSetMediaBufferMode((AVDefine::MediaBufferMode)(int)param);
+        mCodec->slotSetMediaBufferMode((AVDefine::AVMediaBufferMode)(int)param);
         break;
     case AVCodecTaskCommand_Decodec:
         mCodec->decodec();

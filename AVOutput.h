@@ -209,8 +209,8 @@ signals :
 private :
     friend class AVRenderer;
     AVPlayer *mPlayer;
-    AVDefine::FillMode mFillMode;
-    AVDefine::Orientation mOrientation;
+    AVDefine::AVFillMode mFillMode;
+    AVDefine::AVOrientation mOrientation;
     QColor mBackgroundColor;
     VideoFormat mFormat;
     QTimer mTimer;

@@ -21,7 +21,7 @@ public :
     /** 可以渲染第一帧调 */
     virtual void mediaCanRenderFirstFrame(){}
     /** 状态回调 */
-    virtual void mediaStatusChanged(AVDefine::MediaStatus){}
+    virtual void mediaStatusChanged(AVDefine::AVMediaStatus){}
     /** 存在音频回调 */
     virtual void mediaHasAudioChanged(){}
     /** 存在视频回调 */

@@ -17,6 +17,8 @@
 //32k
 #define FFMPEG_AVIO_INBUFFER_SIZE 1024 * 32
 
+#define SAMPLE_ARRAY_SIZE (8 * 65536)
+
 extern "C"
 {
 
@@ -26,12 +28,17 @@ extern "C"
     #endif
 
     #include <libavcodec/avcodec.h>
+    #include <libavcodec/avfft.h>
+
+
     #include <libavformat/avformat.h>
     #include <libswscale/swscale.h>
     #include <libavutil/imgutils.h>
 
     #include <libavfilter/buffersink.h>
     #include <libavfilter/buffersrc.h>
+    #include <libavfilter/avfilter.h>
+
     #include <libavutil/opt.h>
 
     #include <libswresample/swresample.h>
@@ -94,9 +101,13 @@ public :
 class PacketQueue{
 public :
     PacketQueue(){init();}
-    QMutex mutex;
+
     QList<AVPacket *> packets;
     AVRational time_base;
+
+private :
+    QMutex mutex;
+public :
 
     void setTimeBase(AVRational &timebase){
         this->time_base.den = timebase.den;
@@ -104,67 +115,78 @@ public :
     }
 
     void init(){
-        bool locked = mutex.tryLock();
         release();
-        if(locked)
-            mutex.unlock();
     }
 
     void put(AVPacket *pkt){
         if(pkt == NULL)
             return;
-        bool locked = mutex.tryLock();
+        mutex.lock();
         packets.push_back(pkt);
-        if(locked)
-            mutex.unlock();
+        mutex.unlock();
     }
 
     AVPacket *get(){
         AVPacket *pkt = NULL;
-        bool locked = mutex.tryLock();
+        mutex.lock();
         if(packets.size() > 0){
             pkt = packets.front();
             packets.pop_front();
         }
-        if(locked)
-            mutex.unlock();
+        mutex.unlock();
         return pkt;
+    }
+
+    void removeToTime(int time){
+        mutex.lock();
+        QList<AVPacket *>::iterator begin = packets.begin();
+        QList<AVPacket *>::iterator end = packets.end();
+        while(begin != end){
+            AVPacket *pkt = *begin;
+            if(pkt != NULL){
+                if(av_q2d(time_base) * pkt->pts * 1000 >= time || packets.size() == 1){
+                    break;
+                }
+                av_packet_unref(pkt);
+                av_freep(pkt);
+            }
+            packets.pop_front();
+            begin = packets.begin();
+        }
+        mutex.unlock();
     }
 
     int diffTime(){
         int time = 0;
-        bool locked = mutex.tryLock();
+        mutex.lock();
         if(packets.size() > 1){
             int start = av_q2d(time_base) * packets.front()->pts * 1000;
             int end = av_q2d(time_base) * packets.back()->pts * 1000;
             time = end - start;
         }
-        if(locked)
-            mutex.unlock();
+        mutex.unlock();
         return time;
     }
 
     int startTime(){
         int time = -1;
-        bool locked = mutex.tryLock();
+        mutex.lock();
         if(packets.size() > 0){
             time = av_q2d(time_base) * packets.front()->pts * 1000;
         }
-        if(locked)
-            mutex.unlock();
+        mutex.unlock();
         return time;
     }
 
     int size(){
-        bool locked = mutex.tryLock();
+        mutex.lock();
         int len = packets.size();
-        if(locked)
-            mutex.unlock();
+        mutex.unlock();
         return len;
     }
 
     void release(){
-        bool locked = mutex.tryLock();
+        mutex.lock();
         QList<AVPacket *>::iterator begin = packets.begin();
         QList<AVPacket *>::iterator end = packets.end();
         while(begin != end){
@@ -173,10 +195,10 @@ public :
                 av_packet_unref(pkt);
                 av_freep(pkt);
             }
-            begin = packets.erase(begin);
+            packets.pop_front();
+            begin = packets.begin();
         }
-        if(locked)
-            mutex.unlock();
+        mutex.unlock();
     }
 };
 
@@ -192,13 +214,13 @@ public:
     void load();
     void seek(int ms);
     void setBufferSize(int size);
-    void setMediaBufferMode(AVDefine::MediaBufferMode mode);
+    void setMediaBufferMode(AVDefine::AVMediaBufferMode mode);
     void checkBuffer();//检查是否需要填充buffer
     bool hasVideo();
     bool hasAudio();
     /** 设置播放速率，最大为8，最小为1.0 / 8 */
-    void setPlayRate(float);
-    float getPlayRate();
+    void setPlayRate(int);
+    int getPlayRate();
     /** 渲染第一帧 */
     void renderFirstFrame();
     int requestRenderNextFrame();
@@ -220,16 +242,27 @@ public:
     /** 显示指定位置的帧 */
     void showFrameByPosition(int time);
 
+    /** 设置音频通道 */
+    bool setAudioChannel(AVDefine::AVChannelLayout);
+    int getAudioChannel()const;
+
+    float getRealPlayRate()const {return mRealPlayRate;}
+
+    /** 丢弃帧到指定的时间*/
+    void throwAwaysFrameToTime(int time);
+
+    AVDefine::AVMediaBufferMode getMediaBufferMode() const {return mMediaBufferMode;}
+
     /** 是否是预览 */
     GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(preview,bool)
 public:
     void slotSeek(int ms);
     void slotSetBufferSize(int size);
-    void slotSetMediaBufferMode(AVDefine::MediaBufferMode mode);
+    void slotSetMediaBufferMode(AVDefine::AVMediaBufferMode mode);
     void slotRenderFirstFrame();
     void slotRenderNextFrame();
     void slotRequestAudioNextFrame(int);
-    void slotSetPlayRate(float);
+    void slotSetPlayRate(int);
 public:
     void init();
     void release(bool isDeleted = false);
@@ -241,13 +274,7 @@ public:
     void releseCurrentRenderItem();
     void resetVideoCodecContext();
 private:
-//    void initPacketQueue(PacketQueue *q);
-//    int putPacketQueue(PacketQueue *q, AVPacket *pkt);
-//    int getPacketQueue(PacketQueue *q, AVPacket *pkt);
-//    void flushPacketQueue(PacketQueue *q);
-//    void destroyPacketQueue(PacketQueue *q);
-
-    void statusChanged(AVDefine::MediaStatus);
+    void statusChanged(AVDefine::AVMediaStatus);
 
 
     void initRenderList();
@@ -255,6 +282,12 @@ private:
     void clearRenderList(bool isDelete = false);
     RenderItem *getInvalidRenderItem();
     void changeRenderItemSize(int width,int height,AVPixelFormat format);
+
+    bool initAudioFilter();
+    void releaseAudioFilter();
+
+    //计算频谱
+    void calcSpectrum(uint16_t *pcm);
 private :
     int mAudioIndex;
     int mVideoIndex;
@@ -274,9 +307,8 @@ private :
     bool mIsOpenVideoCodec;
     bool mHasSubtitle;
 
-    AVPacket mPacket;
-    AVFrame
-            *mAudioFrame,
+
+    AVFrame *mAudioFrame,
             *reciveFrame,
             *mHWFrame; //硬解BUFFER
     QVector<RenderItem *> mRenderList; //渲染队列
@@ -314,12 +346,12 @@ private :
     bool mIsVideoBuffered;
     bool mIsAudioBuffered;
     bool mIsSubtitleBuffered;
-    AVDefine::MediaBufferMode mMediaBufferMode;
+    AVDefine::AVMediaBufferMode mMediaBufferMode;
 
-    AVDefine::MediaStatus mStatus;
+    AVDefine::AVMediaStatus mStatus;
     QByteArray mAudioBuffer;
     QMutex mAudioBufferMutex;
-    uint8_t *mAudioDstData;
+
     PacketQueue audioq;
     PacketQueue videoq;
     PacketQueue subtitleq;
@@ -346,7 +378,11 @@ private :
     /** 上一次下载的位置 */
     qint64 mLastPos;
     /** 播放速率 */
-    float mPlayRate;
+    int mPlayRate;
+    /** 实际的播放比率 */
+    float mRealPlayRate;
+    /** 源采样率 */
+    int mSourceSampleRate;
     /** 源生音频格式 */
     QAudioFormat mSourceAudioFormat;
     /** 己写入的音频字节数量 */
@@ -359,6 +395,13 @@ private :
     /** 是否是伴唱 */
     bool mIsAccompany;
 
+
+    AVFilterContext *mAudioBufferSinkCtx;
+    AVFilterContext *mAudioBufferSrcCtx;
+    AVFilterGraph *mAudioFilterGraph;
+
+    AVDefine::AVChannelLayout mAudioChannelLayout;
+    uint64_t mOutChannelLayout;
 public :
     /** 任务处理线程 */
     AVThread mProcessThread;

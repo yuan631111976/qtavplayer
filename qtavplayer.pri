@@ -1,16 +1,13 @@
 HEADERS += \
     $$PWD/AVDefine.h \
     $$PWD/AVMediaCallback.h \
-    $$PWD/AVMediaPlayer.h \
     $$PWD/AVOutput.h \
     $$PWD/AVPlayer.h \
-    $$PWD/AVPlayerCallback.h \
     $$PWD/AVThread.h \
     $$PWD/AVDecoder.h \
     $$PWD/AVAudioEffect.h
 
 SOURCES += \
-    $$PWD/AVMediaPlayer.cpp \
     $$PWD/AVOutput.cpp \
     $$PWD/AVPlayer.cpp \
     $$PWD/AVThread.cpp \

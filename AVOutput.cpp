@@ -415,9 +415,9 @@ void AVRenderer::paint(){
 
     int rotate = m_format.rotate;
     switch (m_output->orientation()) {
-    case AVDefine::LandscapeOrientation:rotate += 90;break;
-    case AVDefine::InvertedLandscapeOrientation:rotate += 270;break;
-    case AVDefine::InvertedPortraitOrientation:rotate += 180;break;
+    case AVDefine::AVOrientation_LandscapeOrientation:rotate += 90;break;
+    case AVDefine::AVOrientation_InvertedLandscapeOrientation:rotate += 270;break;
+    case AVDefine::AVOrientation_InvertedPortraitOrientation:rotate += 180;break;
     }
     rotate %= 360;
 
@@ -477,8 +477,8 @@ void AVRenderer::paint(){
 AVOutput::AVOutput(QQuickItem *parent)
     : QQuickFramebufferObject(parent)
     , mPlayer(NULL)
-    , mFillMode(AVDefine::PreserveAspectFit)
-    , mOrientation(AVDefine::PrimaryOrientation)
+    , mFillMode(AVDefine::AVFillMode_Default)
+    , mOrientation(AVDefine::AVOrientation_Default)
     , mFps(30)
     , mIsDestroy(false)
     , mBackgroundColor(QColor(0,0,0,255))
@@ -521,7 +521,7 @@ int AVOutput::fillMode() const{
     return (int)mFillMode;
 }
 void AVOutput::setFillMode(int mode){
-    mFillMode = (AVDefine::FillMode)mode;
+    mFillMode = (AVDefine::AVFillMode)mode;
     fillModeChanged();
 }
 int AVOutput::fps() const{
@@ -583,22 +583,22 @@ int AVOutput::orientation() const{
     return mOrientation;
 }
 void AVOutput::setOrientation(int orientation){
-    this->mOrientation = (AVDefine::Orientation)orientation;
+    this->mOrientation = (AVDefine::AVOrientation)orientation;
     emit orientationChanged();
 }
 
 QRect AVOutput::calculateGeometry(int w,int h){
     switch(mFillMode){
-        case AVDefine::Stretch : {
+        case AVDefine::AVFillMode_Stretch : {
             return QRect(0,0,width(),height());
         }
-        case AVDefine::PreserveAspectCrop :
-        case AVDefine::PreserveAspectFit :
+        case AVDefine::AVFillMode_PreserveAspectCrop :
+        case AVDefine::AVFillMode_PreserveAspectFit :
         default :{
             float rate1 = w / width();
             float rate2 = h / height();
             float rate = rate1 > rate2 ? rate1 : rate2;
-            if(mFillMode == AVDefine::PreserveAspectCrop){
+            if(mFillMode == AVDefine::AVFillMode_PreserveAspectCrop){
                 rate = rate1 < rate2 ? rate1 : rate2;
             }
             float newWidth = w / rate;
@@ -621,7 +621,7 @@ QQuickFramebufferObject::Renderer *AVOutput::createRenderer() const{
 
 void AVOutput::playStatusChanged(){
     if(mPlayer != NULL){
-        if(mPlayer->getPlaybackState() == AVDefine::PlayingState){
+        if(mPlayer->getPlaybackState() == AVDefine::AVPlayState_Playing){
             mTimer.start();
         }else{
             mTimer.stop();
