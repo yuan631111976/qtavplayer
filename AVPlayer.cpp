@@ -1,12 +1,11 @@
 #include "AVPlayer.h"
 
 AVPlayer::AVPlayer()
-    : mDecoder(NULL)
+    : mDecoder(new AVDecoder)
     , mComplete(false)
     , mAutoLoad(true)
     , mAutoPlay(false)
     , mAudio(NULL)
-    , mBufferSize(5000)
     , mRrnderFirstFrame(true)
     , mLastTime(0)
     , mIsDestroy(false)
@@ -31,11 +30,9 @@ AVPlayer::AVPlayer()
     , msourceWidth(-1)
     , msourceHeight(-1)
     , mkdMode(AVDefine::AVKDMode_Default)
+    , mdecodecMode(AVDefine::AVDecodeMode_Default)
 {
-    mDecoder = new AVDecoder;
     mDecoder->setMediaCallback(this);
-    mDecoder->setBufferSize(mBufferSize);
-    mComplete = true;
 }
 
 AVPlayer::~AVPlayer(){
@@ -84,10 +81,15 @@ void AVPlayer::classBegin(){
 void AVPlayer::componentComplete(){
     if(mDecoder){
         mDecoder->setpreview(this->getpreview());
-    }
-    if (!mSource.isEmpty() && (mAutoLoad || mAutoPlay)) {
-        if (mAutoLoad && mDecoder)
-            mDecoder->load();
+        mDecoder->setdecodecMode(mdecodecMode);
+        if(mDecoder->getPlayPath() != mSource)
+            mDecoder->setFilename(mSource);
+        else{
+            if (!mSource.isEmpty() && (mAutoLoad || mAutoPlay)) {
+                if (mAutoLoad && mDecoder)
+                    mDecoder->load();
+            }
+        }
     }
     mComplete = true;
 }
@@ -110,15 +112,25 @@ void AVPlayer::play(){
             mDecoder->load();
         return;
     }
+
     mAudio->setVolume(mVolume);
     mAudioBufferMutex.lock();
     mAudioBuffer = mAudio->start();
+    if(mAudio->error() != QAudio::NoError){
+//        mAudioBufferMutex.unlock();
+//        mAudioMutex.unlock();
+//        return;
+    }
+//    qDebug() << "------------------ : " << mAudio->error() << mAudioBuffer << mAudio->format();
     mAudioBufferMutex.unlock();
-    mAudioMutex.unlock();
 
     if(!getpreview()){ //预览时，不播放声音数据
-        mAudioTimer->begin();
+        if(mAudio->error() == QAudio::NoError){
+            mAudioTimer->begin();
+        }
     }
+    mAudioMutex.unlock();
+
     setIsPlaying(true);
     setIsPaused(false);
     mCondition.wakeAll();
@@ -197,10 +209,13 @@ void AVPlayer::restart(){
         }
     }
 
-    mAudioMutex.unlock();
     if(!getpreview()){ //预览时，不播放声音数据
-        mAudioTimer->begin();
+        if(mAudio->error() == QAudio::NoError){
+            mAudioTimer->begin();
+        }
     }
+
+    mAudioMutex.unlock();
     wakeupPlayer();
     mCondition.wakeAll();
     mPlaybackState = AVDefine::AVPlayState_Playing;
@@ -279,10 +294,13 @@ void AVPlayer::setSource(const QString &source){
 
     if(mDecoder){
         mDecoder->setpreview(this->getpreview());
+        mDecoder->setdecodecMode(mdecodecMode);
     }
 
-    if(mDecoder)
-        mDecoder->setFilename(mSource);
+    if(mComplete){
+        if(mDecoder)
+            mDecoder->setFilename(mSource);
+    }
     emit sourceChanged();
 }
 
@@ -322,15 +340,6 @@ bool AVPlayer::renderFirstFrame() const{
 }
 void AVPlayer::setRenderFirstFrame(bool flag){
     mRrnderFirstFrame = flag;
-}
-
-int AVPlayer::bufferSize() const{
-    return mBufferSize;
-}
-void AVPlayer::setBufferSize(int size){
-    mBufferSize = size;
-    if(mDecoder)
-        mDecoder->setBufferSize(mBufferSize);
 }
 
 int AVPlayer::volume() const{
@@ -377,16 +386,6 @@ void AVPlayer::slotSetPlayRate(int playRate){
     emit playSpeedRateChanged();
 }
 
-int AVPlayer::getMediaBufferMode() const{
-    if(mDecoder)
-        return (int)mDecoder->getMediaBufferMode();
-    return (int)AVDefine::AVMediaBufferMode_Default;
-}
-void AVPlayer::setMediaBufferMode(int mode){
-    if(mDecoder)
-        mDecoder->setMediaBufferMode((AVDefine::AVMediaBufferMode)mode);
-}
-
 bool AVPlayer::getaccompany()const{
     if(mDecoder)
         return mDecoder->getAccompany();
@@ -404,6 +403,7 @@ int AVPlayer::getchannelLayout()const{
         return mDecoder->getAudioChannel();
     return (int)AVDefine::AVChannelLayout_Default;
 }
+
 void AVPlayer::setchannelLayout(int value){
     if(mDecoder){
         mDecoder->setAudioChannel((AVDefine::AVChannelLayout)value);
@@ -411,13 +411,37 @@ void AVPlayer::setchannelLayout(int value){
     }
 }
 
-int AVPlayer::getkdMode()const{
-    return mkdMode;
-}
 void AVPlayer::setkdMode(int value){
     mkdMode = value;
     emit kdModeChanged();
 }
+
+void AVPlayer::setminimumBufferSize(int value){
+    if(value < 3000)
+        value = 3000;
+    if(mDecoder)mDecoder->setminimumBufferSize(value);
+}
+
+void AVPlayer::setmaximumBufferSize(int value){
+    if(mDecoder)mDecoder->setmaximumBufferSize(value);
+}
+
+void AVPlayer::setdecodecMode(int value){
+    mdecodecMode = value;
+    if(mDecoder)
+        mDecoder->setdecodecMode(value);
+}
+
+int AVPlayer::getdecodecMode() const{
+    if(mDecoder)
+        return mDecoder->getdecodecMode();
+    return (int)AVDefine::AVDecodeMode_Soft;
+}
+
+QVector<int> AVPlayer::getsupportDecodecModeList() const{
+    if(mDecoder)mDecoder->getsupportDecodecModeList();
+}
+
 
 void AVPlayer::mediaUpdateAudioFormat(const QAudioFormat &format){
     QAudioDeviceInfo info(QAudioDeviceInfo::defaultOutputDevice());
@@ -560,11 +584,12 @@ void AVPlayer::requestRender(){
             mAudioMutex.lock();
             if(mAudio)
                 mAudio->resume();
-            mAudioMutex.unlock();
             mIsAudioWaiting = false;
             if(!getpreview()){ //预览时，不播放声音数据
-                mAudioTimer->begin();
+                if(mAudio && mAudio->error() == QAudio::NoError)
+                    mAudioTimer->begin();
             }
+            mAudioMutex.unlock();
         }
     }else if(mkdMode == AVDefine::AVKDMode_ThrowAway_Video || mDecoder->getPlayRate() != AVDefine::AVPlaySpeedRate_Normal){
         if(currentTime - nextTime >= 1000 && !mIsAudioWaiting){

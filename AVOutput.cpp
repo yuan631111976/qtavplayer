@@ -59,7 +59,12 @@ static QMap<AVPixelFormat,RenderParams> initRenderParams(){
     params[AV_PIX_FMT_NV12] = RenderParams(AV_PIX_FMT_NV12,one,two,zero,one,two,zero,one,two,zero,GL_LUMINANCE,GL_LUMINANCE,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,GL_LUMINANCE,GL_LUMINANCE,NV12,true);
     params[AV_PIX_FMT_NV21] = RenderParams(AV_PIX_FMT_NV21,one,two,zero,one,two,zero,one,two,zero,GL_LUMINANCE,GL_LUMINANCE,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,GL_LUMINANCE,GL_LUMINANCE,NV21,true);
     params[AV_PIX_FMT_YUV420P10LE] = RenderParams(AV_PIX_FMT_YUV420P10LE,two, two,two,one,two,two,one,two,two,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+    params[AV_PIX_FMT_YUV422P10LE] = RenderParams(AV_PIX_FMT_YUV422P10LE,two, two,two,one,one,one,one,one,one,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
     params[AV_PIX_FMT_YUV444P10LE] = RenderParams(AV_PIX_FMT_YUV444P10LE,two,two,two,one,one,one,one,one,one,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+    params[AV_PIX_FMT_YUVA420P10LE] = RenderParams(AV_PIX_FMT_YUVA420P10LE,two, two,two,one,two,two,one,two,two,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+    params[AV_PIX_FMT_YUVA422P10LE] = RenderParams(AV_PIX_FMT_YUVA422P10LE,two, two,two,one,one,one,one,one,one,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+    params[AV_PIX_FMT_YUVA444P10LE] = RenderParams(AV_PIX_FMT_YUVA444P10LE,two,two,two,one,one,one,one,one,one,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+
     params[AV_PIX_FMT_YUV410P] = RenderParams(AV_PIX_FMT_YUV410P,one,one,one,one,four,four,one,four,four,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
     params[AV_PIX_FMT_YUV411P] = RenderParams(AV_PIX_FMT_YUV411P,one,one,one,one,one,one,one,one,one,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
 
@@ -80,11 +85,12 @@ static QMap<AVPixelFormat,RenderParams> initRenderParams(){
     params[AV_PIX_FMT_UYYVYY411] = RenderParams(AV_PIX_FMT_UYYVYY411,one,one,one,one,two,two,one,two,two,GL_LUMINANCE,GL_LUMINANCE,UYYVYY,false);
 
 
-    params[AV_PIX_FMT_RGB444LE] = RenderParams(AV_PIX_FMT_RGB444LE,one,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE,GL_LUMINANCE,BGR4,false);
-    params[AV_PIX_FMT_RGB444BE] = RenderParams(AV_PIX_FMT_RGB444BE,one,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE,GL_LUMINANCE,RGB,false);
+    params[AV_PIX_FMT_RGB444LE] = RenderParams(AV_PIX_FMT_RGB444LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_RGBA,GL_RGBA,RGB444,false,GL_UNSIGNED_SHORT_4_4_4_4);
+    params[AV_PIX_FMT_RGB444BE] = RenderParams(AV_PIX_FMT_RGB444BE,two,zero,zero,one,zero,zero,one,zero,zero,GL_RGBA,GL_RGBA,RGB444,false,GL_UNSIGNED_SHORT_4_4_4_4);
 
-    params[AV_PIX_FMT_BGR444LE] = RenderParams(AV_PIX_FMT_BGR444LE,one,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE,GL_LUMINANCE,BGR,false);
-    params[AV_PIX_FMT_BGR444BE] = RenderParams(AV_PIX_FMT_BGR444BE,one,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE,GL_LUMINANCE,BGR,false);
+    params[AV_PIX_FMT_BGR444LE] = RenderParams(AV_PIX_FMT_BGR444LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_RGBA,GL_RGBA,BGR444,false,GL_UNSIGNED_SHORT_4_4_4_4);
+    params[AV_PIX_FMT_BGR444BE] = RenderParams(AV_PIX_FMT_BGR444BE,two,zero,zero,one,zero,zero,one,zero,zero,GL_RGBA,GL_RGBA,BGR444,false,GL_UNSIGNED_SHORT_4_4_4_4);
+
 
 
 
@@ -107,6 +113,34 @@ static QMap<AVPixelFormat,RenderParams> initRenderParams(){
     params[AV_PIX_FMT_BAYER_GRBG16LE] = RenderParams(AV_PIX_FMT_BAYER_GRBG16LE,two,one,one,one,one,one,one,two,two,GL_LUMINANCE16,GL_LUMINANCE,GRBG,true,GL_UNSIGNED_SHORT);
 
 
+    params[AV_PIX_FMT_BAYER_GRBG16LE] = RenderParams(AV_PIX_FMT_BAYER_GRBG16LE,two,one,one,one,one,one,one,two,two,GL_LUMINANCE16,GL_LUMINANCE,GRBG,true,GL_UNSIGNED_SHORT);
+
+    params[AV_PIX_FMT_RGB565LE] = RenderParams(AV_PIX_FMT_RGB565LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_RGB,GL_RGB,RGB,true,GL_UNSIGNED_SHORT_5_6_5);
+    params[AV_PIX_FMT_RGB555LE] = RenderParams(AV_PIX_FMT_RGB555LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_BGRA,GL_BGRA,RGB,true,GL_UNSIGNED_SHORT_1_5_5_5_REV);
+
+
+    params[AV_PIX_FMT_BGR565LE] = RenderParams(AV_PIX_FMT_BGR565LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_RGB,GL_RGB,BGR565,true,GL_UNSIGNED_SHORT_5_6_5);
+    params[AV_PIX_FMT_BGR555LE] = RenderParams(AV_PIX_FMT_RGB555LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_BGRA,GL_BGRA,BGR565,true,GL_UNSIGNED_SHORT_1_5_5_5_REV);
+
+
+    params[AV_PIX_FMT_RGB48LE] = RenderParams(AV_PIX_FMT_RGB48LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE16,GL_LUMINANCE,RGB,true,GL_UNSIGNED_SHORT);
+    params[AV_PIX_FMT_BGR48LE] = RenderParams(AV_PIX_FMT_BGR48LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE16,GL_LUMINANCE,BGR,true,GL_UNSIGNED_SHORT);
+    params[AV_PIX_FMT_RGBA64LE] = RenderParams(AV_PIX_FMT_RGBA64LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE_ALPHA,GL_LUMINANCE,RGB,true,GL_UNSIGNED_SHORT);
+    params[AV_PIX_FMT_BGRA64LE] = RenderParams(AV_PIX_FMT_BGRA64LE,two,zero,zero,one,zero,zero,one,zero,zero,GL_LUMINANCE_ALPHA,GL_LUMINANCE,BGR,true,GL_UNSIGNED_SHORT);
+
+
+
+//    params[AV_PIX_FMT_YUV420P9LE] = RenderParams(AV_PIX_FMT_YUV420P9LE,two, two,two,one,two,two,one,two,two,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,YUV420P10LE,true);
+
+
+   params[AV_PIX_FMT_NV16] = RenderParams(AV_PIX_FMT_NV16,one,one,one,one,two,two,one,one,one,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
+   params[AV_PIX_FMT_NV20LE] = RenderParams(AV_PIX_FMT_NV20LE,one,one,one,one,two,two,one,two,two,GL_LUMINANCE,GL_LUMINANCE,YUV,true);
+
+
+
+    ///硬解 DXVA same nv12
+    params[AV_PIX_FMT_DXVA2_VLD] = RenderParams(AV_PIX_FMT_DXVA2_VLD,one,two,zero,one,two,zero,one,two,zero,GL_LUMINANCE,GL_LUMINANCE,GL_LUMINANCE_ALPHA,GL_LUMINANCE_ALPHA,GL_LUMINANCE,GL_LUMINANCE,NV12,true);
+
 
     return params;
 }
@@ -116,31 +150,39 @@ static const QMap<AVPixelFormat,RenderParams> renderParams = initRenderParams();
 
 AVRenderer::~AVRenderer()
 {
-//    if(m_buffer != NULL){
-//        delete m_buffer;
-//    }
-
     if(m_program != NULL){
         m_program->deleteLater();
         m_program = NULL;
     }
 
     if(m_vbo != NULL){
+        m_vbo->destroy();
         delete m_vbo;
         m_vbo = NULL;
     }
 
     if(m_ibo != NULL){
+        m_ibo->destroy();
         delete m_ibo;
         m_ibo = NULL;
     }
 
     if(m_vao != NULL){
+        m_vao->destroy();
         m_vao->deleteLater();
         m_vao = NULL;
     }
 
-    glDeleteTextures(TEXTURE_NUMBER, textureId);
+    if(mIsInitPbo){
+        for(int i = 0;i < 1;i++){
+            for(int j = 0;j < TEXTURE_NUMBER;j++){
+                m_pbo[i][j].destroy();
+            }
+        }
+    }
+
+    if(mIsInitTextures)
+        glDeleteTextures(TEXTURE_NUMBER, textureId);
 }
 
 void AVRenderer::render() {
@@ -216,7 +258,7 @@ void AVRenderer::init(){
             AVRational heightRational = params.yuvheights[i];
             int width = linesize * widthRational.num / widthRational.den;
             int height = m_format.renderFrame->height * heightRational.num / heightRational.den;
-//            qDebug() << width << height;
+            //qDebug() << width << height;
             glTexImage2D ( GL_TEXTURE_2D, 0, params.yuvInternalformat[i],width ,height, 0, params.yuvGlFormat[i], params.dataType, NULL);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
@@ -304,13 +346,15 @@ void AVRenderer::paint(){
     mDataMutex.lock();
     m_format.renderFrameMutex->lock();
 
-    if(m_format.renderFrame == NULL ||
-            m_format.renderFrame->data[0] == NULL ||
-            m_format.renderFrame->width <= 0 ||
-            m_format.renderFrame->height <= 0){
-        m_format.renderFrameMutex->unlock();
-        mDataMutex.unlock();
-        return;
+    if(m_format.renderFrame != NULL && m_format.renderFrame->hw_frames_ctx == NULL){ // hw_frames_ctx不为空则为硬解
+        if(m_format.renderFrame == NULL ||
+                m_format.renderFrame->data[0] == NULL ||
+                m_format.renderFrame->width <= 0 ||
+                m_format.renderFrame->height <= 0){
+            m_format.renderFrameMutex->unlock();
+            mDataMutex.unlock();
+            return;
+        }
     }
 
     if(mIsNeedNewUpdate){
@@ -362,6 +406,12 @@ void AVRenderer::paint(){
         int linesize = m_format.renderFrame->linesize[j];
         uint8_t * data = m_format.renderFrame->data[j];
 
+        if(m_format.renderFrame->hw_frames_ctx != NULL){
+            linesize = m_format.renderFrame->hw_frames_ctx->size;
+            data = m_format.renderFrame->hw_frames_ctx->data;
+            continue;
+//            qDebug() << linesize;
+        }
 //        if(index == 1)
 //            qDebug() << "----------" << linesize << m_format.renderFrame->width << m_format.renderFrame->height << j;
         if(data != NULL && linesize != 0){
@@ -377,7 +427,15 @@ void AVRenderer::paint(){
                     m_pbo[pboIndex][j].write(i * qAbs(linesize),data + i * linesize,qAbs(linesize));
                 }
             }else{
-                m_pbo[pboIndex][j].write(0,data , textureSize);
+                if(m_format.renderFrame->hw_frames_ctx != NULL){
+                    void *p = m_pbo[pboIndex][j].map(QOpenGLBuffer::WriteOnly);
+                    if(p){
+                         memcpy(p, data , textureSize);
+                         m_pbo[pboIndex][j].unmap();
+                    }
+                }else{
+                    m_pbo[pboIndex][j].write(0,data , textureSize);
+                }
             }
             linesize = qAbs(linesize);
 

@@ -40,6 +40,9 @@ enum TextureFormat{
     RGGB = 20 ,
     GRBG = 21 ,
     GBRG = 22 ,
+    BGR565 = 23 ,
+    RGB444 = 24,
+    BGR444 = 25,
 };
 
 class RenderParams{
@@ -153,9 +156,6 @@ class AVOutput : public QQuickFramebufferObject
     Q_PROPERTY(bool hdrMode READ HDR WRITE setHDR NOTIFY hdrModeChanged)
     Q_PROPERTY(bool vrMode READ VR WRITE setVR NOTIFY vrModeChanged)
     Q_PROPERTY(bool useVideoBackground READ useVideoBackground WRITE setUseVideoBackground NOTIFY useVideoBackgroundChanged)
-
-    Q_ENUMS(FillMode)
-    Q_ENUMS(Orientation)
 public:
     AVOutput(QQuickItem *parent = 0);
     ~AVOutput();

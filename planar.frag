@@ -149,6 +149,8 @@ void main()
         vec2 firstRed = vec2(0,1);
     }else if(tex_format == 22){ //GBRG
         vec2 firstRed = vec2(1,0);
+    }else if(tex_format == 23){//BGR565
+        rgba.rgb = texture2D(tex_y, textureOut).bgr;
     }else{ //其它
         rgba.r = yuv.r + 1.596 * yuv.b;
         rgba.g = yuv.r - 0.813 * yuv.b - 0.391 * yuv.g;

@@ -84,6 +84,12 @@ void main() {
     }else if(tex_format == 18){//BGR4
         gl_FragColor.rgb = uyvy.rgb;
         gl_FragColor.a = alpha;
+    }else if(tex_format == 24){//RGB444
+        gl_FragColor.rgb = uyvy.gba;
+        gl_FragColor.a = alpha;
+    }else if(tex_format == 25){//BGR444
+        gl_FragColor.rgb = uyvy.abg;
+        gl_FragColor.a = alpha;
     }else{
         gl_FragColor.r = y + 1.596 * v;
         gl_FragColor.g = y - 0.813 * v - 0.391 * u;

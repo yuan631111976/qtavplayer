@@ -22,12 +22,10 @@ class AVPlayer : public QObject , public AVMediaCallback ,public QQmlParserStatu
     Q_PROPERTY(bool hasAudio READ hasAudio NOTIFY hasAudioChanged)
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
     Q_PROPERTY(int status READ status NOTIFY statusChanged)
-    Q_PROPERTY(bool renderFirstFrame READ renderFirstFrame WRITE setRenderFirstFrame)
+    Q_PROPERTY(bool renderFirstFrame READ renderFirstFrame WRITE setRenderFirstFrame) //加载后，是否渲染第一帧
     Q_PROPERTY(int volume READ volume WRITE setVolume NOTIFY volumeChanged)
     Q_PROPERTY(int pos READ pos WRITE seek NOTIFY positionChanged)
     Q_PROPERTY(int duration READ duration NOTIFY durationChanged)
-    Q_PROPERTY(int bufferSize READ bufferSize WRITE setBufferSize)
-    Q_PROPERTY(int bufferMode READ getMediaBufferMode WRITE setMediaBufferMode)
 
     GENERATE_QML_NOSET_PROPERTY(sourceWidth,int) //原视屏的宽度
     GENERATE_QML_NOSET_PROPERTY(sourceHeight,int)//原视屏的高度
@@ -36,6 +34,11 @@ class AVPlayer : public QObject , public AVMediaCallback ,public QQmlParserStatu
     GENERATE_QML_PROPERTY(accompany,bool)//是否启用伴唱 //true : 伴唱 | false : 原唱 ，默认为false
     GENERATE_QML_PROPERTY(channelLayout,int)//AVDefine.AVChannelLayout
     GENERATE_QML_PROPERTY(kdMode,int)//AVDefine.AVKDMode
+    GENERATE_QML_PROPERTY(minimumBufferSize,int)//缓冲区最小长度 默认5000毫秒，每次缓冲时，最少有3000毫秒的数据，才能开始播放 ,(设置此值时，如果底于3000，则为3000)
+    GENERATE_QML_PROPERTY(maximumBufferSize,int)//缓冲区最大长度 默认为 1000 * 10 (10秒钟)
+    GENERATE_QML_NOSET_PROPERTY(bufferedSize,int)//已经缓冲了多少时间的数据
+    GENERATE_QML_PROPERTY(decodecMode,int)//解码模式 AVDefine.AVDecodeMode
+    GENERATE_QML_NOSET_PROPERTY(supportDecodecModeList,QVector<int>)//当前视频支持的解码模式列表
 
 
 
@@ -45,7 +48,12 @@ class AVPlayer : public QObject , public AVMediaCallback ,public QQmlParserStatu
     GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(playSpeedRate,int)
     GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(accompany,bool)
     GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(channelLayout,int)
-    GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(kdMode,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED(kdMode,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED(minimumBufferSize,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED(maximumBufferSize,int)
+    GENERATE_GET_PROPERTY_CHANGED(bufferedSize,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(decodecMode,int)
+    GENERATE_GET_PROPERTY_CHANGED_NO_IMPL(supportDecodecModeList,QVector<int>)
 
 public:
     AVPlayer();
@@ -67,9 +75,6 @@ public:
     bool renderFirstFrame() const;
     void setRenderFirstFrame(bool);
 
-    int bufferSize() const;
-    void setBufferSize(int size);
-
     int volume() const;
     void setVolume(int vol);
 
@@ -77,10 +82,6 @@ public:
 
     int pos() const;
     int duration() const;
-
-    int getMediaBufferMode() const;
-    void setMediaBufferMode(int mode);
-
 
     VideoFormat *getRenderData();
     AVDefine::AVPlayState getPlaybackState();
@@ -108,6 +109,7 @@ public :
     void mediaHasAudioChanged();
     void mediaHasVideoChanged();
     void mediaCanRenderFirstFrame();
+    void mediaUpdateBufferSize(int time){mbufferedSize = time;emit bufferedSizeChanged();}
 
 signals :
     void durationChanged();
@@ -146,7 +148,6 @@ private:
     bool mAutoPlay;
     bool mRrnderFirstFrame;
 
-    int mBufferSize;
     float mVolume;
     int mDuration;
     int mPos;

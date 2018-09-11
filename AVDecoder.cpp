@@ -78,20 +78,6 @@ static void ByteArrayToFloatArray(unsigned char byte_array[], int byte_count, fl
     }
 }
 
-static int hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type)
-{
-    AVDecoder *opaque = (AVDecoder *) ctx->opaque;
-    int err = 0;
-
-    if ((err = av_hwdevice_ctx_create(&opaque->mHWDeviceCtx, type,
-                                      NULL, NULL, 0)) < 0) {
-        qDebug() << "Failed to create specified HW device.\n";
-        return err;
-    }
-    ctx->hw_device_ctx = av_buffer_ref(opaque->mHWDeviceCtx);
-    return err;
-}
-
 static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,
                                         const enum AVPixelFormat *pix_fmts)
 {
@@ -99,9 +85,13 @@ static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,
     const enum AVPixelFormat *p;
     for (p = pix_fmts; *p != -1; p++) {
         if (*p == opaque->mHWPixFormat)
+        {
+//            qDebug() << (*p) << ";" << opaque->mHWPixFormat;
+//            qDebug() << "Successed to get HW surface format.";
             return *p;
+        }
     }
-    qDebug() << "Failed to get HW surface format.\n";
+//    qDebug() << "Failed to get HW surface format.";
     return AV_PIX_FMT_NONE;
 }
 
@@ -145,8 +135,8 @@ AVDecoder::AVDecoder()
     , mIsOpenVideoCodec(false)
     , mRotate(0)
     , mIsReadFinish(false)
-    , mMediaBufferMode(AVDefine::AVMediaBufferMode_Time)
-    , mBufferSize(5000)
+    , mminimumBufferSize(3000)
+    , mmaximumBufferSize(1000 * 10)
     , mIsDestroy(false)
     , mAudioSwrCtx(NULL)
     , mIsVideoBuffered(false)
@@ -173,9 +163,8 @@ AVDecoder::AVDecoder()
     , mAudioFrame(NULL)
     , reciveFrame(NULL)
     , mIsInit(false)
-    , mIsSupportHw(false)
+    , mUseHw(false)
     , mHWDeviceCtx(NULL)
-    , mIsEnableHwDecode(false)
     , mFrameIndex(0)
     , mIsVideoLoadedCompleted(true)
     , mIsAudioLoadedCompleted(true)
@@ -189,6 +178,7 @@ AVDecoder::AVDecoder()
     , mAudioChannelLayout(AVDefine::AVChannelLayout_Auto)
     , mSourceSampleRate(8000)
     , mRealPlayRate(1.0f)
+    , mdecodecMode(AVDefine::AVDecodeMode_Soft)
 {
 
 #ifdef LIBAVUTIL_VERSION_MAJOR
@@ -256,38 +246,32 @@ void AVDecoder::init(){
             avcodec_parameters_to_context(mVideoCodecCtx, mFormatCtx->streams[mVideoIndex]->codecpar);
 
             mVideoCodecCtx->thread_count = 0;
-#ifdef ENABLE_HW
-            if(mIsEnableHwDecode){
-                for (int i = 0;; i++) {
-                    const AVCodecHWConfig *config = avcodec_get_hw_config(mVideoCodec, i);
-                    if (!config) {
-                        qDebug() << "------------------------ hw : 不支持硬解";
-                        break;
-                    }
-                    if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type != AV_HWDEVICE_TYPE_NONE) {
-                        qDebug() << "------------------------ support hw";
-                        mIsSupportHw = true;
-                        mVideoCodecCtx->opaque = (void *) this;
-                        mHWPixFormat = config->pix_fmt;
-                        mVideoCodecCtx->get_format = get_hw_format;
-                        hw_decoder_init(mVideoCodecCtx, config->device_type);
-                        break;
-                    }
+#ifdef SUPPORT_HW
+            mHWConfigListMutex.lock();
+            mHWConfigList.clear();
+            for (int i = 0;; i++) {
+                const AVCodecHWConfig *config = avcodec_get_hw_config(mVideoCodec, i);
+                if (!config) {
+                    break;
+                }
+                if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) && config->device_type != AV_HWDEVICE_TYPE_NONE) {
+                    mHWConfigList.push_back((AVCodecHWConfig *)config);
+                    break;
                 }
             }
+            mHWConfigListMutex.unlock();
 #endif
-
-            mIsOpenVideoCodec = true;
-            if(avcodec_open2(mVideoCodecCtx, mVideoCodec, NULL) < 0)
-            {
-                statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
-                mIsOpenVideoCodec = false;
-            }
+            initVideoContext();
 
             if(mIsOpenVideoCodec){
                 if(mCallback){
                     mCallback->mediaHasVideoChanged();
                 }
+                videoq.setTimeBase(mFormatCtx->streams[mVideoIndex]->time_base);
+                videoq.init();
+                mIsVideoLoadedCompleted = false;
+            }else{
+                statusChanged(AVDefine::AVMediaStatus_InvalidMedia);
             }
         }
     }
@@ -340,106 +324,6 @@ void AVDecoder::init(){
         return;
     }
 
-    if(mIsOpenVideoCodec){
-        AVDictionaryEntry *tag = NULL;
-        tag = av_dict_get(mFormatCtx->streams[mVideoIndex]->metadata, "rotate", tag, 0);
-        if(tag != NULL)
-            mRotate = QString(tag->value).toInt();
-        av_free(tag);
-
-        vFormat.width = mVideoCodecCtx->width;
-        vFormat.height = mVideoCodecCtx->height;
-        vFormat.rotate = mRotate;
-        vFormat.format = mVideoCodecCtx->pix_fmt;
-
-
-        //        qDebug() <<"----------------------- : " << mVideoCodecCtx->pix_fmt << ":" << AV_PIX_FMT_BGR24;
-        switch (mVideoCodecCtx->pix_fmt) {
-        case AV_PIX_FMT_YUV420P :
-        case AV_PIX_FMT_YUVJ420P :
-        case AV_PIX_FMT_YUV422P :
-        case AV_PIX_FMT_YUVJ422P :
-        case AV_PIX_FMT_YUV444P :
-        case AV_PIX_FMT_YUVJ444P :
-        case AV_PIX_FMT_GRAY8 :
-        case AV_PIX_FMT_UYVY422 :
-        case AV_PIX_FMT_YUYV422 :
-        case AV_PIX_FMT_YUV420P10LE :
-        case AV_PIX_FMT_BGR24 :
-        case AV_PIX_FMT_RGB24 :
-        case AV_PIX_FMT_YUV410P :
-        case AV_PIX_FMT_YUV411P :
-        case AV_PIX_FMT_MONOWHITE :
-        case AV_PIX_FMT_MONOBLACK :
-        case AV_PIX_FMT_PAL8 :
-        case AV_PIX_FMT_UYYVYY411 :
-        case AV_PIX_FMT_BGR8 :
-        case AV_PIX_FMT_RGB8 :
-//        case AV_PIX_FMT_BGR4 :
-//        case AV_PIX_FMT_BGR4_BYTE :
-//        case AV_PIX_FMT_RGB4 :
-//        case AV_PIX_FMT_RGB4_BYTE :
-        case AV_PIX_FMT_NV12 :
-        case AV_PIX_FMT_NV21 :
-        case AV_PIX_FMT_ARGB :
-        case AV_PIX_FMT_RGBA :
-        case AV_PIX_FMT_ABGR :
-        case AV_PIX_FMT_BGRA :
-//        case AV_PIX_FMT_GRAY16BE :
-        case AV_PIX_FMT_GRAY16LE :
-        case AV_PIX_FMT_YUV440P :
-        case AV_PIX_FMT_YUVJ440P :
-        case AV_PIX_FMT_YUVA420P :
-
-//        case AV_PIX_FMT_RGB444LE :
-//        case AV_PIX_FMT_RGB444BE :
-//        case AV_PIX_FMT_BGR444LE :
-//        case AV_PIX_FMT_BGR444BE :
-
-         case AV_PIX_FMT_YUV420P16LE :
-//         case AV_PIX_FMT_YUV420P16BE :
-         case AV_PIX_FMT_YUV422P16LE :
-//         case AV_PIX_FMT_YUV422P16BE :
-         case AV_PIX_FMT_YUV444P16LE :
-//         case AV_PIX_FMT_YUV444P16BE :
-
-//        case AV_PIX_FMT_YUVA420P16BE :
-        case AV_PIX_FMT_YUVA420P16LE :
-//        case AV_PIX_FMT_YUVA422P16BE :
-        case AV_PIX_FMT_YUVA422P16LE :
-//        case AV_PIX_FMT_YUVA444P16BE :
-        case AV_PIX_FMT_YUVA444P16LE :
-
-//        case AV_PIX_FMT_BAYER_BGGR16LE :
-//        case AV_PIX_FMT_BAYER_BGGR16BE :
-//        case AV_PIX_FMT_BAYER_RGGB16LE :
-//        case AV_PIX_FMT_BAYER_RGGB16BE :
-//        case AV_PIX_FMT_BAYER_GBRG16LE :
-//        case AV_PIX_FMT_BAYER_GBRG16BE :
-//        case AV_PIX_FMT_BAYER_GRBG16LE :
-//        case AV_PIX_FMT_BAYER_GRBG16BE :
-
-        case AV_PIX_FMT_YUV444P10LE :
-            break;
-        default: //AV_PIX_FMT_YUV420P  如果上面的格式不支持直接渲染，则转换成通用AV_PIX_FMT_YUV420P格式
-            vFormat.format = AV_PIX_FMT_YUV420P;
-            mVideoSwsCtx = sws_getContext(
-                        mVideoCodecCtx->width,
-                        mVideoCodecCtx->height,
-                        mVideoCodecCtx->pix_fmt,
-                        mVideoCodecCtx->width,
-                        mVideoCodecCtx->height,
-                        (AVPixelFormat)vFormat.format,
-                        SWS_BICUBIC,NULL,NULL,NULL);
-            reciveFrame = av_frame_alloc();
-            changeRenderItemSize(mVideoCodecCtx->width,mVideoCodecCtx->height,(AVPixelFormat)vFormat.format);
-            break;
-        }
-        videoq.setTimeBase(mFormatCtx->streams[mVideoIndex]->time_base);
-        videoq.init();
-        mIsVideoLoadedCompleted = false;
-    }
-
 
     if(mIsOpenAudioCodec){
         mAudioFrame = av_frame_alloc();
@@ -480,11 +364,6 @@ void AVDecoder::init(){
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
 
     initAudioFilter();
-}
-
-/** 设置是否启用硬用 */
-void AVDecoder::setHWDecodec(bool enable){
-
 }
 
 void AVDecoder::release(bool isDeleted){
@@ -528,6 +407,19 @@ void AVDecoder::release(bool isDeleted){
         av_frame_free(&reciveFrame);
         reciveFrame = NULL;
     }
+
+    if(mHWFrame != NULL){
+        av_frame_unref(mHWFrame);
+        av_frame_free(&mHWFrame);
+        mHWFrame = NULL;
+    }
+
+    if(mHWDeviceCtx != NULL){
+        av_buffer_unref(&mHWDeviceCtx);
+        av_free(mHWDeviceCtx);
+        mHWDeviceCtx = NULL;
+    }
+
     //    qDebug() << "-----------------10";
     mIsOpenAudioCodec = false;
     mIsOpenVideoCodec = false;
@@ -704,7 +596,9 @@ void AVDecoder::decodec(){
     }
 
     if(mIsDestroy || mIsReadFinish)
+    {
         return;
+    }
 
     if(mIsSeek){
 //                qDebug() <<"------------- seek";
@@ -719,15 +613,11 @@ void AVDecoder::decodec(){
         mIsSeekd = false;
     }
 
-    mIsVideoSeeked = true;
-    mIsAudioSeeked = true;
-
     AVPacket *pkt = av_packet_alloc();
     int ret = av_read_frame(mFormatCtx, pkt);
 
-    mIsReadFinish = ret < 0;
-    if(mIsReadFinish){
-//        qDebug() << "--------------------- decoded completed";
+    if ((ret == AVERROR_EOF || avio_feof(mFormatCtx->pb))) { //读取完成
+        mIsReadFinish = true;
         if(!mIsSeekd){
             mIsSeekd = true;
             //            if(mCallback){
@@ -743,15 +633,38 @@ void AVDecoder::decodec(){
             }
             statusChanged(AVDefine::AVMediaStatus_EndOfMedia);
         }
+        av_packet_unref(pkt);
+        av_freep(pkt);
+        return;
+    }
+    if (mFormatCtx->pb && mFormatCtx->pb->error)
+    {
+        av_packet_unref(pkt);
+        av_freep(pkt);
         return;
     }
 
+    if(ret < 0)
+    {
+//        qDebug() <<"------------------ :" << getError(ret);
+        av_packet_unref(pkt);
+        av_freep(pkt);
+        return;
+    }
+
+    pkt->pts = pkt->pts == AV_NOPTS_VALUE ? pkt->dts : pkt->pts;
+
+    mIsVideoSeeked = true;
+    mIsAudioSeeked = true;
+
+
     //    qDebug() << "------------------------------- decodec:" << pkt.stream_index << ":" << mFormatCtx->streams[pkt.stream_index]->codec->codec_type;
+
     if (pkt->stream_index == mVideoIndex && mIsOpenVideoCodec){
-        //        qDebug() <<"------------- video";
+//                qDebug() <<"------------- video";
         mIsVideoLoadedCompleted = false;
+        int currentTime = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * pkt->pts * 1000;
         if(!mIsSeekd){
-            int currentTime = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * pkt->pts * 1000;
             if(currentTime < mSeekTime){
                 mVideoCodecCtxMutex.lock();
                 ret = avcodec_send_packet(mVideoCodecCtx, pkt);
@@ -782,10 +695,12 @@ void AVDecoder::decodec(){
         }else{
             mIsVideoLoadedCompleted = false;
         }
+        if(mCallback && !hasAudio())
+            mCallback->mediaUpdateBufferSize(currentTime);
     }else if(pkt->stream_index == mAudioIndex && mIsOpenAudioCodec && !getpreview()){ //预览时，不处理音频
         mIsAudioLoadedCompleted = false;
+        qint64 audioTime = av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * pkt->pts * 1000;
         if(!mIsSeekd){
-            qint64 audioTime = av_q2d(mFormatCtx->streams[mAudioIndex]->time_base ) * pkt->pts * 1000;
             if(audioTime < mSeekTime){ //如果音频时间小于拖动的时间，则丢掉音频包
                 av_packet_unref(pkt);
                 av_freep(pkt);
@@ -806,6 +721,9 @@ void AVDecoder::decodec(){
         }else{
             mIsAudioLoadedCompleted = false;
         }
+
+        if(mCallback)
+            mCallback->mediaUpdateBufferSize(audioTime);
     }
     else if(mFormatCtx->streams[pkt->stream_index]->codec->codec_type == AVMEDIA_TYPE_SUBTITLE){
         //        subtitleq.put(&pkt);
@@ -890,9 +808,9 @@ void AVDecoder::decodec(){
     }else{
         //判断是否将设定的缓存装满，如果未装满的话，一直循环
         int videoDiffTime = videoq.diffTime(),audioDiffTime = audioq.diffTime();
-        if(((videoDiffTime < mBufferSize && mIsOpenVideoCodec && !mIsVideoLoadedCompleted) ||
-            (audioDiffTime < mBufferSize && mIsOpenAudioCodec && !mIsAudioLoadedCompleted))
-                && videoDiffTime < mBufferSize && audioDiffTime < mBufferSize
+        if(((videoDiffTime < mminimumBufferSize && mIsOpenVideoCodec && !mIsVideoLoadedCompleted) ||
+            (audioDiffTime < mminimumBufferSize && mIsOpenAudioCodec && !mIsAudioLoadedCompleted))
+                && videoDiffTime < mminimumBufferSize && audioDiffTime < mminimumBufferSize
                 ){//只要有一种流装满，则不继续处理
             mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
         }else{
@@ -912,6 +830,10 @@ void AVDecoder::decodec(){
             if(mStatus == AVDefine::AVMediaStatus_Buffering){
                 statusChanged(AVDefine::AVMediaStatus_Buffered);
             }
+        }
+
+        if((videoDiffTime < mmaximumBufferSize && !mIsVideoLoadedCompleted) || (audioDiffTime < mmaximumBufferSize && !mIsAudioLoadedCompleted)){
+            mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
         }
     }
     if(!mTime.isValid())
@@ -986,27 +908,19 @@ void AVDecoder::seek(int ms){
     mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Seek,ms));
 }
 
-void AVDecoder::setBufferSize(int size){
-    mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_SetBufferSize,size));
-}
-
-void AVDecoder::setMediaBufferMode(AVDefine::AVMediaBufferMode mode){
-    mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_SetMediaBufferMode,mode));
-}
-
 void AVDecoder::checkBuffer(){
     if(!mIsReadFinish){
         //判断是否将设定的缓存装满，如果未装满的话，一直循环
         //if(mIsOpenVideoCodec && !mIsVideoLoadedCompleted){
         if(mIsOpenVideoCodec){
-            if(videoq.diffTime() < mBufferSize){
+            if(videoq.diffTime() < mmaximumBufferSize){
                 mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
             }
         }
 
         //if(mIsOpenAudioCodec && !mIsAudioLoadedCompleted){
         if(mIsOpenAudioCodec){
-            if(audioq.diffTime() < mBufferSize ){
+            if(audioq.diffTime() < mmaximumBufferSize ){
                 mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_Decodec));
             }
         }
@@ -1017,14 +931,14 @@ void AVDecoder::releseCurrentRenderItem(){
     if(mLastRenderItem != NULL && mLastRenderItem->isRendered && mLastRenderItem->valid){
         mLastRenderItem->mutex.lock();
         mVideoSwsCtxMutex.lock();
-        mLastRenderItem->release(mVideoSwsCtx == NULL);
+        mLastRenderItem->release();
         mVideoSwsCtxMutex.unlock();
         mLastRenderItem->mutex.unlock();
     }
 }
 
 void AVDecoder::resetVideoCodecContext(){
-    bool locked = mVideoCodecCtxMutex.tryLock();
+    mVideoCodecCtxMutex.lock();
     if(mVideoCodecCtx != NULL){
         if(avcodec_is_open(mVideoCodecCtx)){
             avcodec_close(mVideoCodecCtx);
@@ -1034,8 +948,7 @@ void AVDecoder::resetVideoCodecContext(){
             }
         }
     }
-    if(locked)
-        mVideoCodecCtxMutex.unlock();
+    mVideoCodecCtxMutex.unlock();
 }
 
 /** 渲染第一帧 */
@@ -1059,14 +972,12 @@ void AVDecoder::renderFirstFrame(){
     }
     if(render != NULL){
         if(mCallback){
-            if(mHWFrame == NULL){
-                releseCurrentRenderItem();
-                vFormat.renderFrame = render->frame;
-                vFormat.renderFrameMutex = &render->mutex;
-                render->isRendered = true;
-                mCallback->mediaUpdateVideoFrame((void *)&vFormat);
-                mLastRenderItem = render;
-            }
+            releseCurrentRenderItem();
+            vFormat.renderFrame = render->frame;
+            vFormat.renderFrameMutex = &render->mutex;
+            render->isRendered = true;
+            mCallback->mediaUpdateVideoFrame((void *)&vFormat);
+            mLastRenderItem = render;
         }
     }
     mRenderListMutex.unlock();
@@ -1152,6 +1063,229 @@ void AVDecoder::throwAwaysFrameToTime(int time){
     videoq.removeToTime(time);
 }
 
+QVector<int> AVDecoder::getsupportDecodecModeList(){
+    QVector<int> results;
+    results.append((int)AVDefine::AVDecodeMode_Soft);
+
+    #ifdef SUPPORT_HW
+    mHWConfigListMutex.lock();
+    QList<AVCodecHWConfig *>::iterator begin = mHWConfigList.begin();
+    QList<AVCodecHWConfig *>::iterator end = mHWConfigList.end();
+    while(begin != end){
+        AVCodecHWConfig *config = (AVCodecHWConfig *)*begin;
+        if(config != NULL){
+            switch (config->device_type) {
+                case AV_HWDEVICE_TYPE_VDPAU:results.append((int)AVDefine::AVDecodeMode_VDPAU);break;
+                case AV_HWDEVICE_TYPE_CUDA:results.append((int)AVDefine::AVDecodeMode_CUDA);break;
+                case AV_HWDEVICE_TYPE_VAAPI:results.append((int)AVDefine::AVDecodeMode_VAAPI);break;
+                case AV_HWDEVICE_TYPE_DXVA2:results.append((int)AVDefine::AVDecodeMode_DXVA2);break;
+                case AV_HWDEVICE_TYPE_QSV:results.append((int)AVDefine::AVDecodeMode_QSV);break;
+                case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:results.append((int)AVDefine::AVDecodeMode_VIDEOTOOLBOX);break;
+                case AV_HWDEVICE_TYPE_D3D11VA:results.append((int)AVDefine::AVDecodeMode_D3D11VA);break;
+                case AV_HWDEVICE_TYPE_DRM:results.append((int)AVDefine::AVDecodeMode_DRM);break;
+                case AV_HWDEVICE_TYPE_OPENCL:results.append((int)AVDefine::AVDecodeMode_OPENCL);break;
+                case AV_HWDEVICE_TYPE_MEDIACODEC:results.append((int)AVDefine::AVDecodeMode_MEDIACODEC);break;
+            }
+        }
+        ++begin;
+    }
+    mHWConfigListMutex.unlock();
+    #endif
+    return results;
+}
+
+void AVDecoder::slotSetDecoecMode(int value){
+    if(mdecodecMode == value){
+        return;
+    }
+    switch (value) {
+    case AVDefine::AVDecodeMode_Soft:mdecodecMode = value;break;
+    case AVDefine::AVDecodeMode_HW:mdecodecMode = value;break;
+    case AVDefine::AVDecodeMode_VDPAU:
+    case AVDefine::AVDecodeMode_CUDA:
+    case AVDefine::AVDecodeMode_VAAPI:
+    case AVDefine::AVDecodeMode_DXVA2:
+    case AVDefine::AVDecodeMode_VIDEOTOOLBOX:
+    case AVDefine::AVDecodeMode_D3D11VA:
+    case AVDefine::AVDecodeMode_DRM:
+    case AVDefine::AVDecodeMode_OPENCL:
+    case AVDefine::AVDecodeMode_MEDIACODEC:
+    default:
+#ifdef SUPPORT_HW
+    mHWConfigListMutex.lock();
+    QList<AVCodecHWConfig *>::iterator begin = mHWConfigList.begin();
+    QList<AVCodecHWConfig *>::iterator end = mHWConfigList.end();
+    while(begin != end){
+        AVCodecHWConfig *config = (AVCodecHWConfig *)*begin;
+        if(config != NULL){
+            switch (config->device_type) {
+                case AV_HWDEVICE_TYPE_VDPAU:if((int)AVDefine::AVDecodeMode_VDPAU == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_CUDA:if((int)AVDefine::AVDecodeMode_CUDA == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_VAAPI:if((int)AVDefine::AVDecodeMode_VAAPI == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_DXVA2:if((int)AVDefine::AVDecodeMode_DXVA2 == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_QSV:if((int)AVDefine::AVDecodeMode_QSV == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_VIDEOTOOLBOX:if((int)AVDefine::AVDecodeMode_VIDEOTOOLBOX == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_D3D11VA:if((int)AVDefine::AVDecodeMode_D3D11VA == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_DRM:if((int)AVDefine::AVDecodeMode_DRM == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_OPENCL:if((int)AVDefine::AVDecodeMode_OPENCL == value)mdecodecMode = value;break;
+                case AV_HWDEVICE_TYPE_MEDIACODEC:if((int)AVDefine::AVDecodeMode_MEDIACODEC == value)mdecodecMode = value;break;
+            }
+        }
+        ++begin;
+    }
+    mHWConfigListMutex.unlock();
+#endif
+        break;
+    }
+//    initVideoContext();
+}
+
+void AVDecoder::setdecodecMode(int value){
+    if(true)return;
+    if(mdecodecMode == value){
+        return;
+    }
+    if(!mIsInit){
+        mdecodecMode = value;
+        return;
+    }
+    mProcessThread.addTask(new AVCodecTask(this,AVCodecTask::AVCodecTaskCommand_SetDecodecMode,value));
+}
+
+//初使化视频解码器
+void AVDecoder::initVideoContext(){
+    mVideoCodecCtxMutex.lock();
+    if(mVideoCodecCtx != NULL){
+        if(avcodec_is_open(mVideoCodecCtx))
+            avcodec_close(mVideoCodecCtx);
+    }
+
+    clearRenderList();
+    mVideoCodecCtx->thread_count = 0;
+#ifdef SUPPORT_HW
+    if(mdecodecMode != AVDefine::AVDecodeMode_Soft){
+        mHWConfigListMutex.lock();
+        if(mHWConfigList.size() > 0){
+            const AVCodecHWConfig *config = mHWConfigList.front();
+            mVideoCodecCtx->opaque = (void *) this;
+            mHWPixFormat = config->pix_fmt;
+            if (av_hwdevice_ctx_create(&mHWDeviceCtx, config->device_type,NULL, NULL, 0) < 0) {
+                mUseHw = false;
+            }else{
+                mUseHw = true;
+                mVideoCodecCtx->hw_device_ctx = av_buffer_ref(mHWDeviceCtx);
+                mVideoCodecCtx->get_format = get_hw_format;
+                mHWFrame = av_frame_alloc();
+                changeRenderItemSize(mVideoCodecCtx->width,mVideoCodecCtx->height,(AVPixelFormat)mHWPixFormat);
+            }
+        }else{
+            mUseHw = false;
+        }
+        mHWConfigListMutex.unlock();
+    }else{
+        mUseHw = false;
+    }
+#endif
+
+    mIsOpenVideoCodec = avcodec_open2(mVideoCodecCtx, mVideoCodec, NULL) >= 0;
+    mVideoCodecCtxMutex.unlock();
+
+    if(mIsOpenVideoCodec){
+        AVDictionaryEntry *tag = NULL;
+        tag = av_dict_get(mFormatCtx->streams[mVideoIndex]->metadata, "rotate", tag, 0);
+        if(tag != NULL)
+            mRotate = QString(tag->value).toInt();
+        av_free(tag);
+
+        vFormat.width = mVideoCodecCtx->width;
+        vFormat.height = mVideoCodecCtx->height;
+        vFormat.rotate = mRotate;
+        vFormat.format = mVideoCodecCtx->pix_fmt;
+
+        if(mUseHw){
+            vFormat.format = mHWPixFormat;
+        }
+
+        if(!mUseHw){
+            switch (mVideoCodecCtx->pix_fmt) {
+            case AV_PIX_FMT_YUV420P :
+            case AV_PIX_FMT_YUVJ420P :
+            case AV_PIX_FMT_YUV422P :
+            case AV_PIX_FMT_YUVJ422P :
+            case AV_PIX_FMT_YUV444P :
+            case AV_PIX_FMT_YUVJ444P :
+            case AV_PIX_FMT_GRAY8 :
+            case AV_PIX_FMT_UYVY422 :
+            case AV_PIX_FMT_YUYV422 :
+            case AV_PIX_FMT_YUV420P10LE :
+            case AV_PIX_FMT_BGR24 :
+            case AV_PIX_FMT_RGB24 :
+            case AV_PIX_FMT_YUV410P :
+            case AV_PIX_FMT_YUV411P :
+            case AV_PIX_FMT_MONOWHITE :
+            case AV_PIX_FMT_MONOBLACK :
+            case AV_PIX_FMT_PAL8 :
+            case AV_PIX_FMT_UYYVYY411 :
+            case AV_PIX_FMT_BGR8 :
+            case AV_PIX_FMT_RGB8 :
+            case AV_PIX_FMT_NV12 :
+            case AV_PIX_FMT_NV21 :
+            case AV_PIX_FMT_ARGB :
+            case AV_PIX_FMT_RGBA :
+            case AV_PIX_FMT_ABGR :
+            case AV_PIX_FMT_BGRA :
+            case AV_PIX_FMT_GRAY16LE :
+            case AV_PIX_FMT_YUV440P :
+            case AV_PIX_FMT_YUVJ440P :
+            case AV_PIX_FMT_YUVA420P :
+            case AV_PIX_FMT_YUV420P16LE :
+            case AV_PIX_FMT_YUV422P16LE :
+            case AV_PIX_FMT_YUV444P16LE :
+            case AV_PIX_FMT_YUVA420P16LE :
+            case AV_PIX_FMT_YUVA422P16LE :
+            case AV_PIX_FMT_YUVA444P16LE :
+            case AV_PIX_FMT_YUV444P10LE :
+            case AV_PIX_FMT_RGB565LE :
+            case AV_PIX_FMT_RGB555LE :
+            case AV_PIX_FMT_BGR565LE :
+            case AV_PIX_FMT_BGR555LE :
+            case AV_PIX_FMT_RGB444LE :
+            case AV_PIX_FMT_BGR444LE :
+            case AV_PIX_FMT_YUV422P10LE :
+            case AV_PIX_FMT_YUVA420P10LE :
+            case AV_PIX_FMT_YUVA422P10LE :
+            case AV_PIX_FMT_YUVA444P10LE :
+            case AV_PIX_FMT_NV16 :
+            case AV_PIX_FMT_NV20LE :
+                break;
+            default: //AV_PIX_FMT_YUV420P  如果上面的格式不支持直接渲染，则转换成通用AV_PIX_FMT_YUV420P格式
+                vFormat.format = AV_PIX_FMT_YUV420P;
+                mVideoSwsCtxMutex.lock();
+                if(mVideoSwsCtx != NULL){
+                    sws_freeContext(mVideoSwsCtx);
+                    mVideoSwsCtx = NULL;
+                }
+                mVideoSwsCtx = sws_getContext(
+                            mVideoCodecCtx->width,
+                            mVideoCodecCtx->height,
+                            mVideoCodecCtx->pix_fmt,
+                            mVideoCodecCtx->width,
+                            mVideoCodecCtx->height,
+                            (AVPixelFormat)vFormat.format,
+                            SWS_BICUBIC,NULL,NULL,NULL);
+                mVideoSwsCtxMutex.unlock();
+                reciveFrame = av_frame_alloc();
+                changeRenderItemSize(mVideoCodecCtx->width,mVideoCodecCtx->height,(AVPixelFormat)vFormat.format);
+                break;
+            }
+        }
+    }
+}
+
+int AVDecoder::getdecodecMode() const{
+    return mdecodecMode;
+}
+
 /** 请求向音频buffer添加数据  */
 void AVDecoder::requestAudioNextFrame(int len){
     slotRequestAudioNextFrame(len);
@@ -1183,7 +1317,6 @@ void AVDecoder::slotSeek(int ms){
             astartTime = audioq.startTime();
         }
 
-        //        qDebug() << "---------------:" << astartTime << vstartTime;
         if(((vstartTime < 1000 && vstartTime >= 0) || !hasVideo())
                 && ((astartTime < 1000 && astartTime >= 0) || !hasAudio())
                 ){
@@ -1199,7 +1332,9 @@ void AVDecoder::slotSeek(int ms){
     }
 
     //清除队列
-    resetVideoCodecContext();
+//    resetVideoCodecContext();
+//    qDebug() <<"----------- aaaaaaaaaaaaaa";
+    initVideoContext();
     clearRenderList();
     audioq.release();
     videoq.release();
@@ -1215,13 +1350,6 @@ void AVDecoder::slotSeek(int ms){
     checkBuffer();
 }
 
-void AVDecoder::slotSetBufferSize(int size){
-    mBufferSize = size;
-}
-
-void AVDecoder::slotSetMediaBufferMode(AVDefine::AVMediaBufferMode mode){
-    mMediaBufferMode = mode;
-}
 
 void AVDecoder::slotRenderFirstFrame(){
     slotRenderNextFrame();
@@ -1299,78 +1427,48 @@ void AVDecoder::slotRenderNextFrame(){
             mRenderListMutex.unlock();
             return;
         }
-        /*
-        AVFrame *receiveFrame = mFrameIndex % 2 == 0 ? mFrame : mFrame1;
-        vFormat.renderFrameMutex = mFrameIndex % 2 == 0 ? &mRenderFrameMutex : &mRenderFrameMutex2;
-
-        vFormat.renderFrameMutex->lock();
-        while(avcodec_receive_frame(mVideoCodecCtx, receiveFrame) == 0){
-//            AVFrame *frame = receiveFrame;
-            vFormat.renderFrame = receiveFrame;
-            mHWFrame = NULL;
-            #ifdef ENABLE_HW
-            if (receiveFrame->format == mHWPixFormat && mIsSupportHw) {
-                qDebug() << "----------------------------- 硬解。。。";
-                mHWFrame = av_frame_alloc();
-                // retrieve data from GPU to CPU
-                if ((ret = av_hwframe_transfer_data(mHWFrame, mFrame, 0)) < 0) {
-                    qDebug() << "Error transferring the data to system memory";
-                }
-//                frame = mHWFrame;
-            }
-            #endif
-
-//            av_hwframe_transfer_data
-//            av_hwframe_map()
-//            AV_HWFRAME_MAP_DIRECT
-
-//            if(mVideoSwsCtx != NULL){
-//                ret = sws_scale(mVideoSwsCtx,
-//                          receiveFrame->data,
-//                          receiveFrame->linesize,
-//                          0,
-//                          receiveFrame->height,
-//                          mFrameYUV->data,
-//                          mFrameYUV->linesize);
-
-//                qDebug() << "----------------------slotRenderNextFrame:"<< ret;
-//                av_frame_unref(receiveFrame);
-//                av_frame_copy(receiveFrame,mFrameYUV);
-//                qDebug() << "----------------------slotRenderNextFrame:"<<receiveFrame->width<<mFrameYUV->width;
-//                av_frame_unref(mFrameYUV);
-//            }
-
-            if(mHWFrame != NULL){
-                av_frame_unref(mHWFrame);
-            }
-
-            if(mCallback){
-                if(mHWFrame == NULL){
-                    mCallback->mediaUpdateVideoFrame((void *)&vFormat);
-                }
-            }
-
-            vFormat.renderFrameMutex->unlock();
-
-            ++mFrameIndex;
-            receiveFrame = mFrameIndex % 2 == 0 ? mFrame : mFrame1;
-            vFormat.renderFrameMutex = mFrameIndex % 2 == 0 ? &mRenderFrameMutex : &mRenderFrameMutex2;
-            av_frame_unref(receiveFrame);
-
-            vFormat.renderFrameMutex->lock();
-        }
-        vFormat.renderFrameMutex->unlock();*/
 
         RenderItem *render = getInvalidRenderItem();
         render->mutex.lock();
 
         AVFrame *frame = render->frame;
-        if(mVideoSwsCtx != NULL){
+
+        if(mUseHw){
+            frame = mHWFrame;
+        }
+        else if(mVideoSwsCtx != NULL){
             frame = reciveFrame;
         }
 
         while(avcodec_receive_frame(mVideoCodecCtx, frame) == 0){
-            if(mVideoSwsCtx != NULL){ //将不支持的格式进行转换
+            bool isTranslateSuccessed = true;
+            render->isHWDecodec = false;
+            render->isConverted = false;
+            #ifdef SUPPORT_HW
+            if (frame->format == mHWPixFormat && mUseHw) {
+//                qDebug() << "----------------------------- 硬解。。。";
+                // retrieve data from GPU to CPU
+//                qint64 begin = QDateTime::currentMSecsSinceEpoch();
+                if ((ret = av_hwframe_transfer_data(render->frame, frame, 0)) < 0) {
+//                if ((ret = av_hwframe_map(render->frame, frame, AV_HWFRAME_MAP_DIRECT)) < 0) {
+//                    qDebug() << "Error transferring the data to system memory";
+                    isTranslateSuccessed = false;
+                }else{
+//                    qDebug() << "---------------------- hw successed : " << frame->format << mVideoCodecCtx->pix_fmt <<AV_PIX_FMT_DXVA2_VLD;
+                    isTranslateSuccessed = true;
+//                    render->frame->pts = frame->pts;
+//                    render->frame->width = frame->width;
+//                    render->frame->height = frame->height;
+                    av_frame_copy_props(render->frame, frame);
+//                    av_frame_move_ref(render->frame, frame);
+//                    qDebug() << "-------------------- hao shi : " << (QDateTime::currentMSecsSinceEpoch() - begin);
+                    render->isHWDecodec = true;
+                    av_frame_unref(frame);
+                }
+            }
+            #endif
+
+            if(mVideoSwsCtx != NULL && !mUseHw){ //将不支持的格式进行转换
                 ret = sws_scale(mVideoSwsCtx,
                                 frame->data,
                                 frame->linesize,
@@ -1384,20 +1482,23 @@ void AVDecoder::slotRenderNextFrame(){
                 render->frame->width = frame->width;
                 render->frame->height = frame->height;
                 av_frame_unref(frame);
+                render->isConverted = true;
             }
 
-            if(render->frame->pts != AV_NOPTS_VALUE){
-                render->pts = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * render->frame->pts * 1000;
+            if(isTranslateSuccessed){
+                if(render->frame->pts != AV_NOPTS_VALUE){
+                    render->pts = av_q2d(mFormatCtx->streams[mVideoIndex]->time_base ) * render->frame->pts * 1000;
 
-                //                qDebug() <<  mVideoCodecCtx->pts_correction_last_pts << mVideoCodecCtx->pts_correction_last_dts << mVideoCodecCtx->frame_number;
-                //                qDebug() << "-----------render->pts : " << render->pts << pkt->pts << render->frame->pts;
-                render->valid = true;
-                render->isRendered = false;
-//                qDebug() << "---------------- pts : " << render->pts;
-            }else{
-                mVideoSwsCtxMutex.lock();
-                render->release(mVideoSwsCtx == NULL);
-                mVideoSwsCtxMutex.unlock();
+                    //                qDebug() <<  mVideoCodecCtx->pts_correction_last_pts << mVideoCodecCtx->pts_correction_last_dts << mVideoCodecCtx->frame_number;
+//                                    qDebug() << "-----------render->pts : " << render->pts << pkt->pts << render->frame->pts;
+                    render->valid = true;
+                    render->isRendered = false;
+//                    qDebug() << "-----------render->pts : " << render->pts;
+                }else{
+                    mVideoSwsCtxMutex.lock();
+                    render->release();
+                    mVideoSwsCtxMutex.unlock();
+                }
             }
 
             render->mutex.unlock();
@@ -1406,7 +1507,9 @@ void AVDecoder::slotRenderNextFrame(){
             render = getInvalidRenderItem();
             if(render != NULL){
                 render->mutex.lock();
-                if(mVideoSwsCtx == NULL)
+                if(mUseHw)
+                    frame = mHWFrame;
+                else if(mVideoSwsCtx == NULL)
                     frame = render->frame;
             }
             else
@@ -1415,6 +1518,10 @@ void AVDecoder::slotRenderNextFrame(){
 
         if(mVideoSwsCtx != NULL){
             av_frame_unref(frame);
+        }
+
+        if(mHWFrame != NULL){
+            av_frame_unref(mHWFrame);
         }
 
         if(render != NULL)
@@ -1673,21 +1780,19 @@ int AVDecoder::requestRenderNextFrame(){
         //        qDebug() << "------------- "<< render;
         if(render != NULL){
             if(mCallback){
-                if(mHWFrame == NULL){
-                    if(mLastRenderItem != NULL && mLastRenderItem->isRendered && mLastRenderItem->valid){
-                        mLastRenderItem->mutex.lock();
-                        mVideoSwsCtxMutex.lock();
-                        mLastRenderItem->release(mVideoSwsCtx == NULL);
-                        mVideoSwsCtxMutex.unlock();
-                        mLastRenderItem->mutex.unlock();
-                    }
-                    vFormat.renderFrame = render->frame;
-                    vFormat.renderFrameMutex = &render->mutex;
-                    render->isRendered = true;
-                    mCallback->mediaUpdateVideoFrame((void *)&vFormat);
-
-                    mLastRenderItem = render;
+                if(mLastRenderItem != NULL && mLastRenderItem->isRendered && mLastRenderItem->valid){
+                    mLastRenderItem->mutex.lock();
+                    mVideoSwsCtxMutex.lock();
+                    mLastRenderItem->release();
+                    mVideoSwsCtxMutex.unlock();
+                    mLastRenderItem->mutex.unlock();
                 }
+                vFormat.renderFrame = render->frame;
+                vFormat.renderFrameMutex = &render->mutex;
+                render->isRendered = true;
+                mCallback->mediaUpdateVideoFrame((void *)&vFormat);
+
+                mLastRenderItem = render;
             }
         }
         time = minTime;
@@ -1716,10 +1821,12 @@ int AVDecoder::requestRenderNextFrame(){
 qint64 AVDecoder::nextTime(){
     int time = mIsReadFinish ? -1 : 0;
     if(hasVideo()){
+//        qDebug() << "------------------ next time";
         mRenderListMutex.lock();
         int minTime = time;
         for(int i = 0,len = mRenderList.size();i < len;i++){
             RenderItem *item = mRenderList[i];
+//            qDebug() << " item pts : " << item->pts << item->isRendered << item->valid;
             if(item->isRendered){
                 continue;
             }
@@ -1736,6 +1843,7 @@ qint64 AVDecoder::nextTime(){
             item->mutex.unlock();
         }
         time = minTime;
+//        qDebug() << "------------------ end next time : " << time;
         mRenderListMutex.unlock();
     }
     return time;
@@ -1774,7 +1882,7 @@ void AVDecoder::clearRenderList(bool isDelete){
         if(item->valid)
         {
             mVideoSwsCtxMutex.lock();
-            mRenderList[i]->release(mVideoSwsCtx == NULL || isDelete);
+            mRenderList[i]->clear();
             mVideoSwsCtxMutex.unlock();
         }
         item->mutex.unlock();
@@ -1814,7 +1922,7 @@ void AVDecoder::changeRenderItemSize(int width,int height,AVPixelFormat format){
         item2->mutex.lock();
         if(item2->valid){
             mVideoSwsCtxMutex.lock();
-            item2->release(mVideoSwsCtx == NULL);
+            item2->release();
             mVideoSwsCtxMutex.unlock();
         }
 
@@ -1968,26 +2076,23 @@ void AVCodecTask::run(){
     case AVCodecTaskCommand_Seek:
         mCodec->slotSeek(param);
         break;
-    case AVCodecTaskCommand_SetBufferSize:
-        mCodec->slotSetBufferSize(param);
-        break;
-    case AVCodecTaskCommand_SetMediaBufferMode:
-        mCodec->slotSetMediaBufferMode((AVDefine::AVMediaBufferMode)(int)param);
-        break;
     case AVCodecTaskCommand_Decodec:
         mCodec->decodec();
         mCodec->checkRenderList();
         break;
-    case AVCodecTaskCommand_SetFileName:{
+    case AVCodecTaskCommand_SetFileName:
         mCodec->setFilenameImpl(param2);
         break;
-    }
-    case AVCodecTaskCommand_DecodeToRender : {
+    case AVCodecTaskCommand_DecodeToRender :
         mCodec->checkRenderList();
         break;
-    }
-    case AVCodecTaskCommand_ShowFrameByPosition : {
+    case AVCodecTaskCommand_SetDecodecMode :
+        mCodec->slotSetDecoecMode((int)param);
+        break;
+
+    case AVCodecTaskCommand_ShowFrameByPosition :
         mCodec->showFrameByPositionImpl(param);
-    }
+        break;
+
     }
 }

@@ -47,7 +47,7 @@ extern "C"
 
     #ifdef LIBAVUTIL_VERSION_MAJOR
     #if (LIBAVUTIL_VERSION_MAJOR >= 56)
-    #define ENABLE_HW
+    #define SUPPORT_HW
     #endif
     #endif
 }
@@ -68,12 +68,24 @@ public :
         : pts(AV_NOPTS_VALUE)
         , valid (false)
         , isRendered(false)
+        , isHWDecodec(false)
     {
         frame = av_frame_alloc();
     }
 
-    void release(bool isUnref){
-        if(frame != NULL && isUnref){
+    void release(){
+        if(!isHWDecodec && !isConverted){
+            if(frame != NULL){
+                av_frame_unref(frame);
+            }
+        }
+        pts = AV_NOPTS_VALUE;
+        valid = false;
+        isRendered = false;
+    }
+
+    void clear(){
+        if(frame != NULL){
             av_frame_unref(frame);
         }
         pts = AV_NOPTS_VALUE;
@@ -94,7 +106,9 @@ public :
     AVFrame * frame; //帧
     qint64 pts; //播放时间
     bool valid; //有效的
-    bool isRendered;
+    bool isRendered; //是否已经渲染
+    bool isHWDecodec; //是否是硬解
+    bool isConverted; //是否是转换过的帧
     QMutex mutex;
 };
 
@@ -213,8 +227,6 @@ public:
     void setFilename(const QString &source);
     void load();
     void seek(int ms);
-    void setBufferSize(int size);
-    void setMediaBufferMode(AVDefine::AVMediaBufferMode mode);
     void checkBuffer();//检查是否需要填充buffer
     bool hasVideo();
     bool hasAudio();
@@ -236,9 +248,6 @@ public:
     bool getAccompany()const;
     void setAccompany(bool flag);
 
-    /** 设置是否启用硬用 */
-    void setHWDecodec(bool enable);
-
     /** 显示指定位置的帧 */
     void showFrameByPosition(int time);
 
@@ -248,13 +257,26 @@ public:
 
     float getRealPlayRate()const {return mRealPlayRate;}
 
+    ///获取播放路径
+    QString getPlayPath() const {return mFilename;}
+
     /** 丢弃帧到指定的时间*/
     void throwAwaysFrameToTime(int time);
 
-    AVDefine::AVMediaBufferMode getMediaBufferMode() const {return mMediaBufferMode;}
+    //获取ffmpeg的误信息
+    QString getError(int no){
+        char msg[512];
+        av_make_error_string(msg,512,no);
+        return QString(msg);
+    }
+
+    QVector<int> getsupportDecodecModeList();
 
     /** 是否是预览 */
     GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(preview,bool)
+    GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(minimumBufferSize,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(maximumBufferSize,int)
+    GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(decodecMode,int)
 public:
     void slotSeek(int ms);
     void slotSetBufferSize(int size);
@@ -273,6 +295,7 @@ public:
 
     void releseCurrentRenderItem();
     void resetVideoCodecContext();
+    void slotSetDecoecMode(int value);
 private:
     void statusChanged(AVDefine::AVMediaStatus);
 
@@ -288,6 +311,8 @@ private:
 
     //计算频谱
     void calcSpectrum(uint16_t *pcm);
+    //初使化视频解码器
+    void initVideoContext();
 private :
     int mAudioIndex;
     int mVideoIndex;
@@ -342,11 +367,9 @@ private :
     /** 视频的旋转角度，由于手机录出来的视频带有旋转度数 */
     int mRotate;
 
-    int mBufferSize;
     bool mIsVideoBuffered;
     bool mIsAudioBuffered;
     bool mIsSubtitleBuffered;
-    AVDefine::AVMediaBufferMode mMediaBufferMode;
 
     AVDefine::AVMediaStatus mStatus;
     QByteArray mAudioBuffer;
@@ -388,10 +411,8 @@ private :
     /** 己写入的音频字节数量 */
     qint64 mAlreadyWroteAudioSize;
 
-    /** 是否支持硬解 */
-    bool mIsSupportHw;
-    /** 是否启用硬解 */
-    bool mIsEnableHwDecode;
+    /** 是否使用硬解 */
+    bool mUseHw;
     /** 是否是伴唱 */
     bool mIsAccompany;
 
@@ -402,6 +423,11 @@ private :
 
     AVDefine::AVChannelLayout mAudioChannelLayout;
     uint64_t mOutChannelLayout;
+
+#ifdef SUPPORT_HW
+    QList<AVCodecHWConfig *> mHWConfigList;
+    QMutex mHWConfigListMutex;
+#endif
 public :
     /** 任务处理线程 */
     AVThread mProcessThread;
@@ -423,11 +449,10 @@ public :
         AVCodecTaskCommand_Init,
         AVCodecTaskCommand_SetPlayRate,
         AVCodecTaskCommand_Seek,
-        AVCodecTaskCommand_SetBufferSize,
-        AVCodecTaskCommand_SetMediaBufferMode,
         AVCodecTaskCommand_Decodec ,
         AVCodecTaskCommand_SetFileName ,
         AVCodecTaskCommand_DecodeToRender,
+        AVCodecTaskCommand_SetDecodecMode,
         AVCodecTaskCommand_ShowFrameByPosition,
     };
     AVCodecTask(AVDecoder *codec,AVCodecTaskCommand command,double param = 0,QString param2 = ""):

@@ -5,7 +5,7 @@
 #define GENERATE_QML_NOSET_PROPERTY(Name,Type) Q_PROPERTY(Type Name READ get##Name NOTIFY Name##Changed)
 
 #define GENERATE_GET_SET_PROPERTY_CHANGED_NO_IMPL(Name,Type) \
-    private : \
+    public : \
         Type m##Name; \
         Type get##Name() const; \
         void set##Name(Type value); \
@@ -37,6 +37,13 @@
     Q_SIGNALS : \
         void Name##Changed();
 
+#define GENERATE_GET_PROPERTY_CHANGED_NO_IMPL(Name,Type) \
+    public : \
+        Type m##Name; \
+        Type get##Name() const; \
+    Q_SIGNALS : \
+        void Name##Changed();
+
 #include <QObject>
 class AVDefine : public QObject{
     Q_OBJECT
@@ -49,6 +56,9 @@ class AVDefine : public QObject{
     Q_ENUMS(AVFillMode)
     Q_ENUMS(AVOrientation)
     Q_ENUMS(AVPlaySpeedRate)
+    Q_ENUMS(AVKDMode)
+    Q_ENUMS(AVDecodeMode)
+
 public :
     /**
  * @brief The MediaStatus enum
@@ -152,6 +162,24 @@ public :
         AVKDMode_Audio_Wait , // 暂停音频，等待视频解码 ,达到同步的目的
         AVKDMode_ThrowAway_Video , // 丢掉一部份视频帧，使视频解码跟上音频，达到同步的目的 (会出现花屏的现象) (倍速播放时，若视频解码跟不上时，强制使用些模式)
         AVKDMode_Default = AVKDMode_ThrowAway_Video
+    };
+
+    /** 解码模式 */
+    enum AVDecodeMode {
+        AVDecodeMode_Soft , // 软解
+        AVDecodeMode_VDPAU , //
+        AVDecodeMode_CUDA , //
+        AVDecodeMode_VAAPI , //
+        AVDecodeMode_DXVA2 , //
+        AVDecodeMode_QSV , //
+        AVDecodeMode_VIDEOTOOLBOX , //
+        AVDecodeMode_D3D11VA , //
+        AVDecodeMode_DRM , //
+        AVDecodeMode_OPENCL ,
+        AVDecodeMode_MEDIACODEC , //
+        AVDecodeMode_HW , //(硬解) 如果想在初使化的时候,不知道有哪些硬解类型，又想使用硬解，则设置此值（程序会自动选择硬解方式，如果不支持，则还是软解）
+
+        AVDecodeMode_Default =  AVDecodeMode_Soft
     };
 };
 #endif // AVDEFINE_H
