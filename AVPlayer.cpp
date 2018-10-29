@@ -241,6 +241,9 @@ void AVPlayer::seekImpl(int time){
     if(mDecoder && !mDecoder->hasAudio() && !mDecoder->hasVideo())
         return;
 
+    if(mDecoder && mDecoder->isLiving())
+        return;
+
     mIsSeekedMutex.lock();
     if(!mIsSeeked){
         if(mThread2.size((int)AVPlayerTask::AVPlayerTaskCommand_Seek) == 0){
@@ -542,6 +545,16 @@ bool AVPlayer::getIsPlaying(){
 }
 
 void AVPlayer::requestRender(){
+    if(mDecoder->isLiving()){
+        int currentTime = mDecoder->requestRenderNextFrame();
+        int nextTime = mDecoder->nextTime();
+        mMutex.lock();
+        mCondition.wait(&mMutex,nextTime - currentTime > 0 ? (nextTime - currentTime) : 1);
+        mMutex.unlock();
+        wakeupPlayer();
+        return;
+    }
+
     if(mIsDestroy || getIsPaused() || !mAudio || mDecoder == NULL){
         return;
     }
@@ -705,6 +718,7 @@ AVDefine::AVPlayState AVPlayer::getPlaybackState(){
 
 /** 现程实现 */
 void AVPlayerTask::run(){
+//    qDebug() << "-------------------- yuanlei play command : " << command;
     switch(command){
     case AVPlayerTaskCommand_Render:
         mPlayer->requestRender();
@@ -716,4 +730,5 @@ void AVPlayerTask::run(){
         mPlayer->slotSetPlayRate(param);
         break;
     }
+//    qDebug() << "-------------------- yuanlei play command end : " << command;
 }

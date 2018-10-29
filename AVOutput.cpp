@@ -31,6 +31,33 @@ static const GLfloat textureVertices[] = {
     1.0f,  1.0f,
 };
 
+// 立方体的顶点座标（一共是36个顶点，组成12个三角形）
+static const GLfloat cubeVertices [] = { -0.4f, -0.4f, -0.4f, -0.4f, 0.4f,
+                                         -0.4f, 0.4f, 0.4f, -0.4f, 0.4f, 0.4f, -0.4f, 0.4f, -0.4f, -0.4f,                -0.4f, -0.4f, -0.4f, -0.4f, -0.4f, 0.4f, 0.4f, -0.4f, 0.4f, 0.4f,                0.4f, 0.4f, 0.4f, 0.4f, 0.4f, -0.4f, 0.4f, 0.4f, -0.4f, -0.4f,                0.4f, -0.4f, -0.4f, -0.4f, 0.4f, -0.4f, -0.4f, 0.4f, -0.4f, 0.4f,                0.4f, -0.4f, 0.4f, -0.4f, -0.4f, 0.4f, -0.4f, -0.4f, -0.4f, 0.4f,                -0.4f, -0.4f, 0.4f, 0.4f, -0.4f, 0.4f, 0.4f, 0.4f, 0.4f, 0.4f,                0.4f, 0.4f, -0.4f, 0.4f, 0.4f, -0.4f, -0.4f, 0.4f, 0.4f, -0.4f,                -0.4f, 0.4f, -0.4f, -0.4f, 0.4f, 0.4f, -0.4f, 0.4f, 0.4f, 0.4f,                0.4f, 0.4f, 0.4f, 0.4f, -0.4f, -0.4f, 0.4f, -0.4f, -0.4f, -0.4f,                -0.4f, -0.4f, -0.4f, 0.4f, -0.4f, -0.4f, 0.4f, -0.4f, 0.4f, 0.4f,                -0.4f, 0.4f, -0.4f, };        // 定义立方体所需要的6个面（一共是12个三角形所需的顶点）        private byte[] cubeFacets = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,                13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,                30, 31, 32, 33, 34, 35, };
+
+
+//3D坐标
+// 定义纹理贴图的72个座标数据
+static const GLfloat cubeTextures [] = { 1.0000f, 1.0000f, 1.0000f, 0.0000f,
+                                        0.0000f, 0.0000f, 0.0000f, 0.0000f,
+                                        0.0000f, 1.0000f, 1.0000f, 1.0000f,
+                                        0.0000f, 1.0000f, 1.0000f, 1.0000f,
+                                        1.0000f, 0.0000f, 1.0000f, 0.0000f,
+                                        0.0000f, 0.0000f, 0.0000f, 1.0000f,
+                                        0.0000f, 1.0000f, 1.0000f, 1.0000f,
+                                        1.0000f, 0.0000f, 1.0000f, 0.0000f,
+                                        0.0000f, 0.0000f, 0.0000f, 1.0000f,
+                                        0.0000f, 1.0000f, 1.0000f, 1.0000f,
+                                        1.0000f, 0.0000f, 1.0000f, 0.0000f,
+                                        0.0000f, 0.0000f, 0.0000f, 1.0000f,
+                                        0.0000f, 1.0000f, 1.0000f, 1.0000f,
+                                        1.0000f, 0.0000f, 1.0000f, 0.0000f,
+                                        0.0000f, 0.0000f, 0.0000f, 1.0000f,
+                                        0.0000f, 1.0000f, 1.0000f, 1.0000f,
+                                        1.0000f, 0.0000f, 1.0000f, 0.0000f,
+                                        0.0000f, 0.0000f, 0.0000f, 1.0000f
+                                      };
+
 static QMap<AVPixelFormat,RenderParams> initRenderParams(){
     QMap<AVPixelFormat,RenderParams> params ;
     AVRational zero = {0,1}; //表示无此通道
@@ -200,7 +227,6 @@ QOpenGLFramebufferObject *AVRenderer::createFramebufferObject(const QSize &size)
 void AVRenderer::updateVideoFrame(VideoFormat *format){
     if(format == NULL)
         return;
-
     mDataMutex.lock();
 
     format->renderFrameMutex->lock();

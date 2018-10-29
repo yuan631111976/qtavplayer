@@ -9,7 +9,6 @@
 #include <QTime>
 #include "AVDefine.h"
 #include "AVThread.h"
-#include "AVAudioEffect.h"
 
 
 #include "AVMediaCallback.h"
@@ -264,13 +263,16 @@ public:
     void throwAwaysFrameToTime(int time);
 
     //获取ffmpeg的误信息
-    QString getError(int no){
+    QString getFFMpegError(int no){
         char msg[512];
         av_make_error_string(msg,512,no);
         return QString(msg);
     }
 
     QVector<int> getsupportDecodecModeList();
+
+    ///是否是直播
+    bool isLiving() const {return mIsLiving;}
 
     /** 是否是预览 */
     GENERATE_GET_SET_PROPERTY_CHANGED_IMPL_SET(preview,bool)
@@ -313,6 +315,7 @@ private:
     void calcSpectrum(uint16_t *pcm);
     //初使化视频解码器
     void initVideoContext();
+
 private :
     int mAudioIndex;
     int mVideoIndex;
@@ -361,7 +364,7 @@ private :
     bool mIsNeedCallRenderFirstFrame;
 
     bool mIsAudioPlayed; // 音频是否播放完成
-    bool mIsVideoPlayed;  //视频是否播放完成
+    bool mIsVideoPlayed;  //视频是否播放完成  
     bool mIsSubtitlePlayed;
 
     /** 视频的旋转角度，由于手机录出来的视频带有旋转度数 */
@@ -384,9 +387,6 @@ private :
     QMutex mRenderFrameMutex2;
     bool mIsDestroy;
 
-
-    QMutex mAudioSwrCtxMutex;
-    SwrContext* mAudioSwrCtx; //音频参数转换上下文
     QMutex mVideoSwsCtxMutex;
     struct SwsContext *mVideoSwsCtx; //视频参数转换上下文
 
@@ -415,14 +415,24 @@ private :
     bool mUseHw;
     /** 是否是伴唱 */
     bool mIsAccompany;
+    /// 是否是直播
+    bool mIsLiving;
+    ///声音滤镜是否初使化成功
+    bool mIsAudioFilterInited;
 
 
     AVFilterContext *mAudioBufferSinkCtx;
     AVFilterContext *mAudioBufferSrcCtx;
     AVFilterGraph *mAudioFilterGraph;
+    AVFrame *mAudioFilterFrame;
+    QMutex mAudioFilterMutex;
+
+    AVFilterInOut *mAudioOutputs;
+    AVFilterInOut *mAudioInputs;
 
     AVDefine::AVChannelLayout mAudioChannelLayout;
     uint64_t mOutChannelLayout;
+
 
 #ifdef SUPPORT_HW
     QList<AVCodecHWConfig *> mHWConfigList;

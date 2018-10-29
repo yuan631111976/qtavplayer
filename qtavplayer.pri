@@ -4,15 +4,13 @@ HEADERS += \
     $$PWD/AVOutput.h \
     $$PWD/AVPlayer.h \
     $$PWD/AVThread.h \
-    $$PWD/AVDecoder.h \
-    $$PWD/AVAudioEffect.h
+    $$PWD/AVDecoder.h
 
 SOURCES += \
     $$PWD/AVOutput.cpp \
     $$PWD/AVPlayer.cpp \
     $$PWD/AVThread.cpp \
-    $$PWD/AVDecoder.cpp \
-    $$PWD/AVAudioEffect.cpp
+    $$PWD/AVDecoder.cpp
 
 RESOURCES += \
     $$PWD/qtavplayer.qrc

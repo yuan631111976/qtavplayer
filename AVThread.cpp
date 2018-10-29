@@ -52,7 +52,7 @@ void AVThread::clearAllTask(int type){
             }
         }
     }
-    mFuns.clear();
+//    mFuns.clear();
     mMutex.unlock();
 }
 
@@ -98,7 +98,7 @@ void AVThread::run(){
     while(mIsRunning){
         Task * task = getTask();
         if(task == NULL){
-            QThread::msleep(1);
+            QThread::msleep(0);
         }else{
             task->run();
             delete task;
