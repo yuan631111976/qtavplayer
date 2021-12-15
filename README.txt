@@ -86,4 +86,14 @@ AV_PIX_FMT_YUVA444P10LE
 AV_PIX_FMT_NV16
 AV_PIX_FMT_NV20LE
 
-交流QQ：631111976
+
+# <center>承接软件项目开发</center>
+* 拥有10年开发经验的专业开发团队 
+* 团队擅长Windows Android IOS Linux各主流平台程序开发
+* 有长期的大型成熟vod，灯控，投影系统开发经验，开发的产品业内知名度较高，享誉度较好
+* 团队擅长开发语言 c/c++/qt Java c# object-c javascript PHP glsl
+* 对sqlite sqlserver mysql数据库开发也很熟练，对软件加密，反编译也有一定心得
+* 在音视频，图形图像处理，网络通讯方面颇有造诣
+* 目前团队已有自研的成熟行业产品，欢迎垂询 同时也承接各系统（Windows Android IOS Linux）平台应用软件开发订单
+* 网上的相遇就是缘分，选择我们，让您放心，满意
+* 联系方式 631111976@qq.com
